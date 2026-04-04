@@ -1,0 +1,131 @@
+from collections.abc import AsyncGenerator
+
+from app.core.exceptions import NotFoundError
+from app.models.conversation import Conversation, Message
+from app.repositories.agent_repo import AgentRepository
+from app.repositories.conversation_repo import ConversationRepository
+from app.services.llm_service import LLMService
+
+
+class ConversationService:
+    def __init__(
+        self,
+        conversation_repo: ConversationRepository,
+        agent_repo: AgentRepository,
+        llm_service: LLMService,
+    ):
+        self.conversation_repo = conversation_repo
+        self.agent_repo = agent_repo
+        self.llm_service = llm_service
+
+    async def create_conversation(
+        self, user_id: str, agent_id: str | None = None, model: str | None = None,
+        title: str | None = None,
+    ) -> str:
+        conversation = Conversation(
+            user_id=user_id,
+            agent_id=agent_id,
+            model=model,
+            title=title,
+        )
+        return await self.conversation_repo.create(conversation)
+
+    async def get_conversation(self, conversation_id: str, user_id: str) -> Conversation:
+        convo = await self.conversation_repo.find_by_id(conversation_id)
+        if not convo or convo.user_id != user_id:
+            raise NotFoundError("Conversation", conversation_id)
+        return convo
+
+    async def list_conversations(
+        self, user_id: str, limit: int = 50, offset: int = 0
+    ) -> list[Conversation]:
+        return await self.conversation_repo.find_by_user(user_id, limit, offset)
+
+    async def send_message(
+        self, conversation_id: str, user_id: str, content: str
+    ) -> dict:
+        """Send a message and get a non-streaming response."""
+        convo = await self.get_conversation(conversation_id, user_id)
+
+        # Save user message
+        user_msg = Message(role="user", content=content)
+        await self.conversation_repo.add_message(conversation_id, user_msg)
+
+        # Determine model and agent
+        agent = None
+        model = convo.model
+        if convo.agent_id:
+            agent = await self.agent_repo.find_by_id(convo.agent_id)
+            if agent:
+                model = agent.preferred_model
+
+        if not model:
+            raise NotFoundError("Model", "no model configured for conversation")
+
+        # Build message history
+        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+        messages.append({"role": "user", "content": content})
+
+        # Get LLM response
+        result = await self.llm_service.complete(model, messages, agent)
+
+        # Save assistant message
+        assistant_msg = Message(
+            role="assistant",
+            content=result["content"],
+            agent_id=convo.agent_id,
+            model_used=result["model_used"],
+            token_count=result.get("token_count"),
+        )
+        await self.conversation_repo.add_message(conversation_id, assistant_msg)
+
+        return {
+            "message": assistant_msg,
+            "model_used": result["model_used"],
+        }
+
+    async def send_message_stream(
+        self, conversation_id: str, user_id: str, content: str
+    ) -> AsyncGenerator[str, None]:
+        """Send a message and stream the response as SSE events."""
+        convo = await self.get_conversation(conversation_id, user_id)
+
+        # Save user message
+        user_msg = Message(role="user", content=content)
+        await self.conversation_repo.add_message(conversation_id, user_msg)
+
+        # Determine model and agent
+        agent = None
+        model = convo.model
+        if convo.agent_id:
+            agent = await self.agent_repo.find_by_id(convo.agent_id)
+            if agent:
+                model = agent.preferred_model
+
+        if not model:
+            raise NotFoundError("Model", "no model configured for conversation")
+
+        # Build message history
+        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+        messages.append({"role": "user", "content": content})
+
+        # Stream LLM response
+        full_content = ""
+        async for event_data in self.llm_service.stream_completion(model, messages, agent):
+            import json
+            event = json.loads(event_data)
+            if event["type"] == "token":
+                full_content += event["content"]
+            elif event["type"] == "done":
+                # Save the complete assistant message
+                assistant_msg = Message(
+                    role="assistant",
+                    content=full_content,
+                    agent_id=convo.agent_id,
+                    model_used=event.get("model_used"),
+                )
+                await self.conversation_repo.add_message(conversation_id, assistant_msg)
+            yield event_data
+
+    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+        return await self.conversation_repo.delete(conversation_id, user_id)

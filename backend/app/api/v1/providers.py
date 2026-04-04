@@ -1,0 +1,91 @@
+from fastapi import APIRouter, Depends
+
+from app.dependencies import get_current_user, get_provider_service, require_admin
+from app.schemas.provider import ModelInfo, ProviderCreate, ProviderResponse, ProviderUpdate
+from app.services.provider_service import ProviderService
+
+router = APIRouter(prefix="/providers", tags=["providers"])
+
+
+@router.get("", response_model=list[ProviderResponse])
+async def list_providers(
+    _user=Depends(get_current_user),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    providers = await svc.list_providers()
+    return [
+        ProviderResponse(
+            id=p.id,
+            name=p.name,
+            display_name=p.display_name,
+            provider_type=p.provider_type,
+            api_base=p.api_base,
+            has_api_key=p.api_key_encrypted is not None,
+            is_enabled=p.is_enabled,
+        )
+        for p in providers
+    ]
+
+
+@router.post("", response_model=dict, status_code=201)
+async def create_provider(
+    body: ProviderCreate,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    provider_id = await svc.create_provider(
+        name=body.name,
+        display_name=body.display_name,
+        provider_type=body.provider_type,
+        api_base=body.api_base,
+        api_key=body.api_key,
+    )
+    return {"id": provider_id}
+
+
+@router.put("/{provider_id}", response_model=dict)
+async def update_provider(
+    provider_id: str,
+    body: ProviderUpdate,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    updates = body.model_dump(exclude_none=True)
+    await svc.update_provider(provider_id, updates)
+    return {"message": "Provider updated"}
+
+
+@router.delete("/{provider_id}", response_model=dict)
+async def delete_provider(
+    provider_id: str,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    await svc.delete_provider(provider_id)
+    return {"message": "Provider deleted"}
+
+
+@router.get("/{provider_id}/models", response_model=list[ModelInfo])
+async def list_provider_models(
+    provider_id: str,
+    _user=Depends(get_current_user),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    return await svc.list_models_for_provider(provider_id)
+
+
+@router.get("/models/all", response_model=list[ModelInfo])
+async def list_all_models(
+    _user=Depends(get_current_user),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    return await svc.list_all_models()
+
+
+@router.post("/{provider_id}/test", response_model=dict)
+async def test_provider(
+    provider_id: str,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    return await svc.test_provider(provider_id)
