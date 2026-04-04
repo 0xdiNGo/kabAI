@@ -1,7 +1,15 @@
-from fastapi import APIRouter, Depends
+import asyncio
+
+from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
-from app.dependencies import get_conversation_service, get_current_user
+from app.dependencies import (
+    get_conversation_service,
+    get_current_user,
+    get_roundtable_service,
+    get_settings_repo,
+)
+from app.repositories.settings_repo import SettingsRepository
 from app.schemas.conversation import (
     ConversationCreate,
     ConversationDetailResponse,
@@ -10,6 +18,7 @@ from app.schemas.conversation import (
     MessageSend,
 )
 from app.services.conversation_service import ConversationService
+from app.services.orchestration.roundtable_service import RoundtableService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -27,7 +36,10 @@ async def list_conversations(
             id=c.id,
             title=c.title,
             agent_id=c.agent_id,
+            agent_ids=c.agent_ids,
             model=c.model,
+            is_collaboration=c.is_collaboration,
+            collaboration_mode=c.collaboration_mode,
             message_count=len(c.messages),
             created_at=c.created_at,
             updated_at=c.updated_at,
@@ -45,6 +57,8 @@ async def create_conversation(
     conversation_id = await svc.create_conversation(
         user_id=user.id,
         agent_id=body.agent_id,
+        agent_ids=body.agent_ids,
+        collaboration_mode=body.collaboration_mode,
         model=body.model,
         title=body.title,
     )
@@ -62,7 +76,10 @@ async def get_conversation(
         id=convo.id,
         title=convo.title,
         agent_id=convo.agent_id,
+        agent_ids=convo.agent_ids,
         model=convo.model,
+        is_collaboration=convo.is_collaboration,
+        collaboration_mode=convo.collaboration_mode,
         message_count=len(convo.messages),
         created_at=convo.created_at,
         updated_at=convo.updated_at,
@@ -72,12 +89,26 @@ async def get_conversation(
                 role=m.role,
                 content=m.content,
                 agent_id=m.agent_id,
+                agent_name=m.agent_name,
                 model_used=m.model_used,
                 created_at=m.created_at,
             )
             for m in convo.messages
         ],
     )
+
+
+@router.get("/{conversation_id}/status", response_model=dict)
+async def get_conversation_status(
+    conversation_id: str,
+    request: Request,
+    user=Depends(get_current_user),
+    svc: ConversationService = Depends(get_conversation_service),
+):
+    """Check if a conversation has an active background processing task."""
+    await svc.get_conversation(conversation_id, user.id)
+    bg = request.app.state.background_manager
+    return {"status": bg.get_status(conversation_id)}
 
 
 @router.post("/{conversation_id}/messages", response_model=dict)
@@ -95,6 +126,7 @@ async def send_message(
             role=msg.role,
             content=msg.content,
             agent_id=msg.agent_id,
+            agent_name=msg.agent_name,
             model_used=msg.model_used,
             created_at=msg.created_at,
         ).model_dump(),
@@ -106,13 +138,57 @@ async def send_message(
 async def send_message_stream(
     conversation_id: str,
     body: MessageSend,
+    request: Request,
+    user=Depends(get_current_user),
+    svc: ConversationService = Depends(get_conversation_service),
+    roundtable_svc: RoundtableService = Depends(get_roundtable_service),
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
+):
+    bg = request.app.state.background_manager
+
+    # If no content and already processing, this is a reconnect
+    is_reconnect = not body.content and bg.get_status(conversation_id) == "processing"
+
+    if not is_reconnect:
+        convo = await svc.get_conversation(conversation_id, user.id)
+        settings = await settings_repo.get()
+
+        # Create queue first, then build coroutine with it
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        if convo.collaboration_mode == "roundtable":
+            coro = roundtable_svc.run_message_stream(
+                conversation_id, user.id, body.content, queue
+            )
+        else:
+            coro = svc.run_message_stream(
+                conversation_id, user.id, body.content, queue
+            )
+
+        await bg.start_chat_with_queue(
+            conversation_id, user.id, coro, queue, settings.max_background_chats
+        )
+
+    async def event_generator():
+        async for event_data in bg.read_events(conversation_id):
+            yield {"data": event_data}
+
+    return EventSourceResponse(event_generator())
+
+
+@router.get("/{conversation_id}/events")
+async def reconnect_events(
+    conversation_id: str,
+    request: Request,
     user=Depends(get_current_user),
     svc: ConversationService = Depends(get_conversation_service),
 ):
+    """Reconnect to an active background stream via GET."""
+    await svc.get_conversation(conversation_id, user.id)
+    bg = request.app.state.background_manager
+
     async def event_generator():
-        async for event_data in svc.send_message_stream(
-            conversation_id, user.id, body.content
-        ):
+        async for event_data in bg.read_events(conversation_id):
             yield {"data": event_data}
 
     return EventSourceResponse(event_generator())
@@ -121,8 +197,11 @@ async def send_message_stream(
 @router.delete("/{conversation_id}", response_model=dict)
 async def delete_conversation(
     conversation_id: str,
+    request: Request,
     user=Depends(get_current_user),
     svc: ConversationService = Depends(get_conversation_service),
 ):
+    bg = request.app.state.background_manager
+    await bg.kill(conversation_id)
     await svc.delete_conversation(conversation_id, user.id)
     return {"message": "Conversation deleted"}

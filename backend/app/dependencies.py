@@ -7,10 +7,12 @@ from app.core.security import decode_token
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.provider_repo import ProviderRepository
+from app.repositories.settings_repo import SettingsRepository
 from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.llm_service import LLMService
+from app.services.orchestration.roundtable_service import RoundtableService
 from app.services.provider_service import ProviderService
 
 
@@ -39,6 +41,10 @@ def get_conversation_repo(database=Depends(get_db)):
     return ConversationRepository(database)
 
 
+def get_settings_repo(database=Depends(get_db)):
+    return SettingsRepository(database)
+
+
 # Services
 def get_auth_service(
     user_repo: UserRepository = Depends(get_user_repo),
@@ -56,8 +62,9 @@ def get_provider_service(
 
 def get_llm_service(
     provider_service: ProviderService = Depends(get_provider_service),
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
 ):
-    return LLMService(provider_service)
+    return LLMService(provider_service, settings_repo)
 
 
 def get_conversation_service(
@@ -66,6 +73,15 @@ def get_conversation_service(
     llm_service: LLMService = Depends(get_llm_service),
 ):
     return ConversationService(conversation_repo, agent_repo, llm_service)
+
+
+def get_roundtable_service(
+    conversation_repo: ConversationRepository = Depends(get_conversation_repo),
+    agent_repo: AgentRepository = Depends(get_agent_repo),
+    llm_service: LLMService = Depends(get_llm_service),
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
+):
+    return RoundtableService(conversation_repo, agent_repo, llm_service, settings_repo)
 
 
 # Auth dependencies

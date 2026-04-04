@@ -3,6 +3,8 @@ import { useAuthStore } from "@/stores/authStore";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import ChatPage from "@/pages/ChatPage";
+import ProvidersPage from "@/pages/ProvidersPage";
+import AgentsPage from "@/pages/AgentsPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -20,6 +22,22 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/agents/manage"
+          element={
+            <ProtectedRoute>
+              <AgentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/providers"
+          element={
+            <ProtectedRoute>
+              <ProvidersPage />
             </ProtectedRoute>
           }
         />

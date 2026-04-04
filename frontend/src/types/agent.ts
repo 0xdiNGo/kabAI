@@ -5,7 +5,7 @@ export interface Agent {
   description: string;
   avatar_url: string | null;
   specializations: string[];
-  preferred_model: string;
+  preferred_model: string | null;
   collaboration_capable: boolean;
   collaboration_role: string | null;
   is_active: boolean;

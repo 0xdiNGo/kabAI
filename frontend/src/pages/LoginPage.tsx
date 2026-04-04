@@ -29,10 +29,10 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <div className="w-full max-w-md space-y-6 rounded-xl bg-gray-900 p-8">
+      <div className="w-full max-w-md space-y-6 rounded-xl bg-matrix-card p-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold">Tiger Team</h1>
-          <p className="mt-2 text-gray-400">
+          <p className="mt-2 text-matrix-text-dim">
             {isRegister ? "Create an account" : "Sign in to continue"}
           </p>
         </div>
@@ -43,7 +43,7 @@ export default function LoginPage() {
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 px-4 py-3 text-gray-100 placeholder-gray-500 outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg bg-matrix-input px-4 py-3 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
             required
           />
           {isRegister && (
@@ -52,7 +52,7 @@ export default function LoginPage() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 px-4 py-3 text-gray-100 placeholder-gray-500 outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg bg-matrix-input px-4 py-3 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
               required
             />
           )}
@@ -61,33 +61,33 @@ export default function LoginPage() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 px-4 py-3 text-gray-100 placeholder-gray-500 outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg bg-matrix-input px-4 py-3 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
             required
           />
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {error && <p className="text-sm text-matrix-red">{error}</p>}
           <button
             type="submit"
-            className="w-full rounded-lg bg-blue-600 py-3 font-medium hover:bg-blue-700 transition-colors"
+            className="w-full rounded-lg bg-matrix-accent py-3 font-medium hover:bg-matrix-accent-hover transition-colors"
           >
             {isRegister ? "Register" : "Sign In"}
           </button>
         </form>
 
-        <div className="text-center text-sm text-gray-400">
+        <div className="text-center text-sm text-matrix-text-dim">
           {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
             onClick={() => setIsRegister(!isRegister)}
-            className="text-blue-400 hover:underline"
+            className="text-matrix-accent hover:underline"
           >
             {isRegister ? "Sign in" : "Register"}
           </button>
         </div>
 
         {/* OAuth placeholder */}
-        <div className="border-t border-gray-800 pt-4">
+        <div className="border-t border-matrix-border pt-4">
           <button
             disabled
-            className="w-full rounded-lg border border-gray-700 py-3 text-gray-500 cursor-not-allowed"
+            className="w-full rounded-lg border border-matrix-border py-3 text-matrix-text-faint cursor-not-allowed"
           >
             Sign in with SSO (coming soon)
           </button>

@@ -8,7 +8,7 @@ class AgentCreate(BaseModel):
     avatar_url: str | None = None
     system_prompt: str
     specializations: list[str] = []
-    preferred_model: str
+    preferred_model: str | None = None
     fallback_models: list[str] = []
     temperature: float = 0.7
     max_tokens: int = 4096
@@ -38,7 +38,14 @@ class AgentResponse(BaseModel):
     description: str
     avatar_url: str | None
     specializations: list[str]
-    preferred_model: str
+    preferred_model: str | None
     collaboration_capable: bool
     collaboration_role: str | None
     is_active: bool
+
+
+class AgentDetailResponse(AgentResponse):
+    system_prompt: str
+    fallback_models: list[str]
+    temperature: float
+    max_tokens: int

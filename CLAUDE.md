@@ -4,21 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tiger Team is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate with each other via orchestrator or roundtable modes to solve complex problems (e.g., tech support).
+Tiger Team is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus.
 
 ## Tech Stack
 
-- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS (gruvbox dark theme)
 - **Backend**: Python 3.12 + FastAPI + litellm (unified LLM provider access)
 - **Database**: MongoDB (Motor async driver) + Redis (sessions/cache)
-- **Auth**: Local username/password + OAuth/OIDC (dual auth at login screen)
-- **Deployment**: Docker Compose (dev), Kubernetes + Kustomize (prod)
+- **Auth**: Local username/password (OAuth/OIDC planned)
+- **Deployment**: Docker Compose (dev + demo)
 
 ## Commands
 
 ```bash
 # Local dev (starts backend, frontend, MongoDB, Redis)
 make dev
+
+# Demo stack (production-like, nginx frontend on port 3000)
+make demo
+
+# Seed demo data (admin user + agents)
+make seed
+
+# Tear down demo
+make demo-down
 
 # Run backend only (needs MongoDB + Redis running)
 make dev-backend
@@ -41,6 +50,9 @@ make format
 
 # Build docker images
 make build
+
+# Generate a Fernet encryption key
+make fernet-key
 ```
 
 ## Architecture
@@ -55,34 +67,71 @@ Three-layer architecture with FastAPI dependency injection:
 
 Key wiring: `dependencies.py` defines all FastAPI `Depends` functions that compose repos → services → routers.
 
-Entry point: `main.py` — FastAPI app with lifespan hooks for MongoDB/Redis connections.
+Entry point: `main.py` — FastAPI app with lifespan hooks for MongoDB/Redis connections and BackgroundTaskManager initialization.
 
 ### LLM Integration
 
 `services/provider_service.py` manages provider configurations (API keys encrypted with Fernet) and model enumeration. `services/llm_service.py` wraps `litellm.acompletion()` for completions and streaming.
 
+**Model resolution chain**: `llm_service.resolve_model()` checks: agent preferred_model → agent fallback_models → system default model (from settings collection). A model is "available" if its provider type matches an enabled provider.
+
 Model IDs use the format `provider/model_name` (e.g., `openai/gpt-4o`, `anthropic/claude-sonnet-4-20250514`, `ollama/llama3`). This maps directly to litellm's model naming.
 
-### Multi-Agent Orchestration (`services/orchestration/`)
+### Background Task Manager (`services/background_manager.py`)
 
-Two collaboration modes:
-- **Orchestrator**: Lead agent plans which specialists to consult → concurrent specialist calls → orchestrator synthesizes response
-- **Roundtable**: Round-robin turns with full thread visibility, agents can `[PASS]`, user can interject
+LLM streaming is decoupled from SSE connections via `BackgroundTaskManager` (singleton on `app.state`). When a user sends a message:
+1. A background `asyncio.Task` runs the LLM call to completion
+2. Events are pushed to an `asyncio.Queue` per conversation
+3. The SSE endpoint reads from the queue
+4. If the client disconnects, the task keeps running and saves the response to DB
+5. Reconnecting clients pick up from the queue's buffer
+
+Admin-configurable `max_background_chats` limit. Excess tasks are cancelled (oldest first).
+
+### Multi-Agent Roundtable (`services/orchestration/`)
+
+Roundtable mode: multiple agents discuss a topic across configurable rounds (default 3).
+
+- Each round: every agent responds in turn, seeing the full thread including other agents' responses
+- Agents can `[PASS]` when they have nothing to add
+- Consensus: if majority passes in a round, discussion ends early
+- Between rounds: a system message prompts agents to build on each other's points
+
+**Collaboration roles** shape agent behavior in roundtables:
+- `orchestrator` — guides discussion, delegates, drives decisions
+- `specialist` — deep domain expertise
+- `critic` — evaluates ideas, finds flaws
+- `synthesizer` — combines viewpoints, drafts conclusions
+- `researcher` — provides data and evidence
+- `devil_advocate` — challenges prevailing opinion
 
 ### Frontend (`frontend/src/`)
 
-- **State**: Zustand stores (`stores/`) for auth, chat, and agent state
+- **State**: Zustand stores (`stores/`) for auth state
 - **Routing**: React Router v6 (`routes.tsx`) with `ProtectedRoute` wrapper
 - **SSE Streaming**: `lib/sse.ts` — POST-based SSE via fetch + ReadableStream (not EventSource)
 - **API Client**: `lib/api.ts` — typed fetch wrapper with JWT auth headers
+- **Theme**: Gruvbox dark palette defined in `tailwind.config.ts` under `colors.matrix.*`
+- **Pages**: Login, Dashboard, Chat, Agents (admin), Providers (admin + settings)
 
 ### MongoDB Collections
 
-`users`, `agents`, `conversations` (messages embedded), `providers`, `collaboration_sessions`
+`users`, `agents`, `conversations` (messages embedded), `providers`, `settings`
 
 ### REST API
 
-All endpoints under `/api/v1`. Auth required on all except register/login. Admin role required for provider/agent management. Streaming endpoints return `text/event-stream`.
+All endpoints under `/api/v1`:
+- **Auth**: register, login, refresh, me
+- **Agents**: CRUD + bulk-model + export/import
+- **Providers**: CRUD + model enumeration + test connectivity
+- **Conversations**: CRUD + streaming (with background task support) + status + event reconnection
+- **Settings**: get/update system settings (default model, max background chats, roundtable rounds)
+
+Auth required on all except register/login. Admin role required for provider/agent/settings management.
+
+### Agent Archives
+
+Default agent profiles stored in `backend/agents/default-agents.json`. Importable via the `POST /agents/import` endpoint or the UI's Import button on the Manage Agents page.
 
 ## Testing
 

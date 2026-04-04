@@ -78,7 +78,7 @@ The seed script is idempotent — safe to run multiple times.
 
 #### 5. Access the app
 
-Open http://localhost and log in with `admin` / `admin123`.
+Open http://localhost:3000 and log in with `admin` / `admin123`.
 
 #### 6. Add an LLM provider
 
@@ -88,13 +88,13 @@ Before you can chat, the app needs at least one configured LLM provider. You can
 
 ```bash
 # Get an auth token
-TOKEN=$(curl -s http://localhost/api/v1/auth/login \
+TOKEN=$(curl -s http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # Add Ollama provider
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -108,7 +108,7 @@ curl -s http://localhost/api/v1/providers \
 **OpenAI:**
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -122,7 +122,7 @@ curl -s http://localhost/api/v1/providers \
 **Anthropic:**
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -136,7 +136,7 @@ curl -s http://localhost/api/v1/providers \
 #### 7. Verify models are available
 
 ```bash
-curl -s http://localhost/api/v1/providers/models/all \
+curl -s http://localhost:3000/api/v1/providers/models/all \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
@@ -168,7 +168,7 @@ Providers must be created after each `make demo-down` since volumes are removed.
 Test provider connectivity:
 
 ```bash
-curl -s http://localhost/api/v1/providers/<provider_id>/test \
+curl -s http://localhost:3000/api/v1/providers/<provider_id>/test \
   -H "Authorization: Bearer $TOKEN" -X POST
 ```
 

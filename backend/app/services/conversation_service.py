@@ -1,4 +1,5 @@
-from collections.abc import AsyncGenerator
+import asyncio
+import json
 
 from app.core.exceptions import NotFoundError
 from app.models.conversation import Conversation, Message
@@ -19,14 +20,19 @@ class ConversationService:
         self.llm_service = llm_service
 
     async def create_conversation(
-        self, user_id: str, agent_id: str | None = None, model: str | None = None,
-        title: str | None = None,
+        self, user_id: str, agent_id: str | None = None,
+        agent_ids: list[str] | None = None,
+        collaboration_mode: str | None = None,
+        model: str | None = None, title: str | None = None,
     ) -> str:
         conversation = Conversation(
             user_id=user_id,
             agent_id=agent_id,
+            agent_ids=agent_ids or [],
             model=model,
             title=title,
+            is_collaboration=collaboration_mode is not None,
+            collaboration_mode=collaboration_mode,
         )
         return await self.conversation_repo.create(conversation)
 
@@ -53,14 +59,13 @@ class ConversationService:
 
         # Determine model and agent
         agent = None
-        model = convo.model
         if convo.agent_id:
             agent = await self.agent_repo.find_by_id(convo.agent_id)
-            if agent:
-                model = agent.preferred_model
 
-        if not model:
-            raise NotFoundError("Model", "no model configured for conversation")
+        model = await self.llm_service.resolve_model(
+            agent.preferred_model if agent else convo.model,
+            agent.fallback_models if agent else None,
+        )
 
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]
@@ -84,10 +89,14 @@ class ConversationService:
             "model_used": result["model_used"],
         }
 
-    async def send_message_stream(
-        self, conversation_id: str, user_id: str, content: str
-    ) -> AsyncGenerator[str, None]:
-        """Send a message and stream the response as SSE events."""
+    async def run_message_stream(
+        self,
+        conversation_id: str,
+        user_id: str,
+        content: str,
+        queue: asyncio.Queue[str | None],
+    ) -> None:
+        """Run streaming message and push events to queue. Saves message to DB on completion."""
         convo = await self.get_conversation(conversation_id, user_id)
 
         # Save user message
@@ -96,23 +105,21 @@ class ConversationService:
 
         # Determine model and agent
         agent = None
-        model = convo.model
         if convo.agent_id:
             agent = await self.agent_repo.find_by_id(convo.agent_id)
-            if agent:
-                model = agent.preferred_model
 
-        if not model:
-            raise NotFoundError("Model", "no model configured for conversation")
+        model = await self.llm_service.resolve_model(
+            agent.preferred_model if agent else convo.model,
+            agent.fallback_models if agent else None,
+        )
 
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]
         messages.append({"role": "user", "content": content})
 
-        # Stream LLM response
+        # Stream LLM response, pushing events to queue
         full_content = ""
         async for event_data in self.llm_service.stream_completion(model, messages, agent):
-            import json
             event = json.loads(event_data)
             if event["type"] == "token":
                 full_content += event["content"]
@@ -125,7 +132,7 @@ class ConversationService:
                     model_used=event.get("model_used"),
                 )
                 await self.conversation_repo.add_message(conversation_id, assistant_msg)
-            yield event_data
+            await queue.put(event_data)
 
     async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
         return await self.conversation_repo.delete(conversation_id, user_id)

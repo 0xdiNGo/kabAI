@@ -3,5 +3,24 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-950 text-gray-100;
+  @apply bg-matrix-bg text-matrix-text;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1d2021;
+}
+::-webkit-scrollbar-thumb {
+  background: #504945;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #665c54;
+}
+
+::selection {
+  background: rgba(254, 128, 25, 0.25);
+  color: #fbf1c7;
 }

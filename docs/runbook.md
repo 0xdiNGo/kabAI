@@ -4,7 +4,7 @@ Quick reference for common operations. All examples assume the demo stack is run
 
 ```bash
 # Get an admin token (reuse across commands)
-TOKEN=$(curl -s http://localhost/api/v1/auth/login \
+TOKEN=$(curl -s http://localhost:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
@@ -23,7 +23,7 @@ Supported `provider_type` values: `openai`, `anthropic`, `ollama`, `google`
 ### Add Ollama (local models, no API key)
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -39,7 +39,7 @@ The `api_base` uses `host.docker.internal` so the backend container can reach Ol
 ### Add OpenAI
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -53,7 +53,7 @@ curl -s http://localhost/api/v1/providers \
 ### Add Anthropic
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -67,7 +67,7 @@ curl -s http://localhost/api/v1/providers \
 ### Add Google Gemini
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -81,14 +81,14 @@ curl -s http://localhost/api/v1/providers \
 ### List providers
 
 ```bash
-curl -s http://localhost/api/v1/providers \
+curl -s http://localhost:3000/api/v1/providers \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
 ### Test provider connectivity
 
 ```bash
-curl -s -X POST http://localhost/api/v1/providers/<provider_id>/test \
+curl -s -X POST http://localhost:3000/api/v1/providers/<provider_id>/test \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
@@ -97,14 +97,14 @@ Returns `{"status": "ok", "model_count": N}` or `{"status": "error", "detail": "
 ### List available models (all providers)
 
 ```bash
-curl -s http://localhost/api/v1/providers/models/all \
+curl -s http://localhost:3000/api/v1/providers/models/all \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
 ### Update a provider (e.g., rotate API key)
 
 ```bash
-curl -s -X PUT http://localhost/api/v1/providers/<provider_id> \
+curl -s -X PUT http://localhost:3000/api/v1/providers/<provider_id> \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"api_key": "sk-new-key-..."}'
@@ -113,7 +113,7 @@ curl -s -X PUT http://localhost/api/v1/providers/<provider_id> \
 ### Delete a provider
 
 ```bash
-curl -s -X DELETE http://localhost/api/v1/providers/<provider_id> \
+curl -s -X DELETE http://localhost:3000/api/v1/providers/<provider_id> \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -126,7 +126,7 @@ Agents are AI personas with specific system prompts, model preferences, and spec
 ### Create an agent
 
 ```bash
-curl -s http://localhost/api/v1/agents \
+curl -s http://localhost:3000/api/v1/agents \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -153,14 +153,14 @@ Key fields:
 ### List agents
 
 ```bash
-curl -s http://localhost/api/v1/agents \
+curl -s http://localhost:3000/api/v1/agents \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
 ### Update an agent
 
 ```bash
-curl -s -X PUT http://localhost/api/v1/agents/devops-engineer \
+curl -s -X PUT http://localhost:3000/api/v1/agents/devops-engineer \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"temperature": 0.3, "max_tokens": 8192}'
@@ -169,14 +169,14 @@ curl -s -X PUT http://localhost/api/v1/agents/devops-engineer \
 ### Deactivate an agent
 
 ```bash
-curl -s -X DELETE http://localhost/api/v1/agents/devops-engineer \
+curl -s -X DELETE http://localhost:3000/api/v1/agents/devops-engineer \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 This soft-deletes (sets `is_active: false`). To reactivate:
 
 ```bash
-curl -s -X PUT http://localhost/api/v1/agents/devops-engineer \
+curl -s -X PUT http://localhost:3000/api/v1/agents/devops-engineer \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"is_active": true}'
@@ -189,7 +189,7 @@ curl -s -X PUT http://localhost/api/v1/agents/devops-engineer \
 ### Register a new user
 
 ```bash
-curl -s -X POST http://localhost/api/v1/auth/register \
+curl -s -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "newuser",
@@ -301,8 +301,8 @@ docker compose -f docker-compose.demo.yml logs backend
 
 ### "No models available" in frontend
 
-1. Check that at least one provider is configured: `curl -s http://localhost/api/v1/providers -H "Authorization: Bearer $TOKEN"`
-2. Test the provider: `curl -s -X POST http://localhost/api/v1/providers/<id>/test -H "Authorization: Bearer $TOKEN"`
+1. Check that at least one provider is configured: `curl -s http://localhost:3000/api/v1/providers -H "Authorization: Bearer $TOKEN"`
+2. Test the provider: `curl -s -X POST http://localhost:3000/api/v1/providers/<id>/test -H "Authorization: Bearer $TOKEN"`
 3. For Ollama, ensure it's running (`ollama serve`) and has at least one model pulled (`ollama list`)
 
 ### Ollama connection refused
@@ -357,12 +357,103 @@ make seed        # Re-seed demo data
 
 ---
 
+## Roundtable Discussions
+
+### Start a roundtable via API
+
+```bash
+# Get agent IDs
+curl -s http://localhost:3000/api/v1/agents \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys,json
+for a in json.load(sys.stdin):
+    print(f'{a[\"id\"]}  {a[\"name\"]}')
+"
+
+# Create a roundtable conversation
+curl -s http://localhost:3000/api/v1/conversations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "agent_ids": ["AGENT_ID_1", "AGENT_ID_2", "AGENT_ID_3"],
+    "collaboration_mode": "roundtable",
+    "title": "Architecture Review"
+  }'
+```
+
+Or use the UI: Dashboard → toggle **Roundtable** → select 2+ agents → **Start Roundtable**.
+
+### Configure roundtable rounds
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"roundtable_max_rounds": 5}'
+```
+
+Default is 3 rounds. Agents pass when they have nothing to add — majority passing ends discussion early.
+
+---
+
+## Agent Import/Export
+
+### Export agents
+
+```bash
+curl -s http://localhost:3000/api/v1/agents/export \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"slugs": ["security-analyst", "devops-engineer"]}' > agents-backup.json
+```
+
+### Import agents
+
+```bash
+curl -s http://localhost:3000/api/v1/agents/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d @agents-backup.json
+```
+
+Skips agents whose slug already exists. The repo includes a default archive at `backend/agents/default-agents.json` with 20 pre-built agents.
+
+### Import default agents via UI
+
+Manage Agents → **Import** → select `backend/agents/default-agents.json`.
+
+---
+
+## Background Chat Processing
+
+### Check if a chat is processing
+
+```bash
+curl -s http://localhost:3000/api/v1/conversations/CONV_ID/status \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns `{"status": "processing"}` or `{"status": "idle"}`.
+
+### Configure max background chats
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"max_background_chats": 10}'
+```
+
+When the limit is exceeded, the oldest background task is cancelled.
+
+---
+
 ## Health Checks
 
 The backend exposes a health endpoint:
 
 ```bash
-curl http://localhost/api/v1/../health
+curl http://localhost:3000/api/v1/../health
 # or directly if backend port is exposed:
 curl http://localhost:8000/health
 ```

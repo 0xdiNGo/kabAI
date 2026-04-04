@@ -245,6 +245,83 @@ Soft-delete (deactivate) an agent. Sets `is_active: false`.
 
 ---
 
+### PUT /agents/bulk-model
+
+Bulk-update the preferred model for multiple agents.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "agent_slugs": ["security-analyst", "devops-engineer", "frontend-lead"],
+  "preferred_model": "ollama/llama3"
+}
+```
+
+Set `preferred_model` to `null` to clear (agents will use system default).
+
+**Response (200):**
+```json
+{ "message": "Updated 3 agents" }
+```
+
+---
+
+### POST /agents/export
+
+Export selected agents as a JSON archive.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{ "slugs": ["security-analyst", "devops-engineer"] }
+```
+
+**Response (200):**
+```json
+{
+  "version": 1,
+  "agents": [
+    {
+      "name": "Security Analyst",
+      "slug": "security-analyst",
+      "description": "...",
+      "system_prompt": "...",
+      "specializations": ["appsec", "threat-modeling"],
+      "preferred_model": null,
+      "fallback_models": [],
+      "temperature": 0.4,
+      "max_tokens": 4096,
+      "collaboration_capable": true,
+      "collaboration_role": "critic"
+    }
+  ]
+}
+```
+
+---
+
+### POST /agents/import
+
+Import agents from a JSON archive. Skips agents whose slug already exists.
+
+**Auth required:** Admin
+
+**Request:** Same format as export response (the archive JSON).
+
+**Response (200):**
+```json
+{
+  "created": 3,
+  "skipped": 1,
+  "skipped_slugs": ["security-analyst"]
+}
+```
+
+---
+
 ## Providers
 
 ### GET /providers
@@ -532,7 +609,7 @@ Send a message and receive the full response (non-streaming).
 
 ### POST /conversations/{conversation_id}/messages/stream
 
-Send a message and receive the response as a Server-Sent Events (SSE) stream.
+Send a message and receive the response as a Server-Sent Events (SSE) stream. Runs as a background task — if the client disconnects, processing continues and the response is saved to the DB.
 
 **Auth required:** Yes (must be conversation owner)
 
@@ -541,33 +618,94 @@ Send a message and receive the response as a Server-Sent Events (SSE) stream.
 { "content": "Explain Docker networking" }
 ```
 
+To reconnect to an active stream (no new message), send empty content:
+```json
+{ "content": "" }
+```
+
 **Response:** `Content-Type: text/event-stream`
 
-```
-data: Here are
-data:  the key
-data:  concepts of
-data:  Docker networking...
-data: [DONE]
+Each `data:` line contains a JSON event. See [SSE Event Types](#sse-event-types) below for the full format.
+
+---
+
+### GET /conversations/{conversation_id}/status
+
+Check if a conversation has an active background processing task.
+
+**Auth required:** Yes (must be conversation owner)
+
+**Response (200):**
+```json
+{ "status": "processing" }
 ```
 
-Each `data:` line contains a text chunk. The stream ends with `data: [DONE]`.
+Values: `"processing"` (LLM call in progress) or `"idle"`.
 
-**Notes:**
-- The frontend uses POST-based SSE (not EventSource) via fetch + ReadableStream
-- The user message and assistant message are both saved to the conversation after streaming completes
+---
+
+### GET /conversations/{conversation_id}/events
+
+Reconnect to an active background stream via GET-based SSE.
+
+**Auth required:** Yes (must be conversation owner)
+
+**Response:** `Content-Type: text/event-stream` — same format as the POST stream endpoint.
 
 ---
 
 ### DELETE /conversations/{conversation_id}
 
-Delete a conversation and all its messages.
+Delete a conversation and all its messages. Kills any active background task.
 
 **Auth required:** Yes (must be conversation owner)
 
 **Response (200):**
 ```json
 { "message": "Conversation deleted" }
+```
+
+---
+
+## Settings
+
+### GET /settings
+
+Get system settings.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+{
+  "default_model": "ollama/llama3",
+  "max_background_chats": 5,
+  "roundtable_max_rounds": 3
+}
+```
+
+---
+
+### PUT /settings
+
+Update system settings.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "default_model": "ollama/llama3",
+  "max_background_chats": 10,
+  "roundtable_max_rounds": 5
+}
+```
+
+All fields optional — only include what you want to change. Set `default_model` to `null` to clear.
+
+**Response (200):**
+```json
+{ "message": "Settings updated" }
 ```
 
 ---
@@ -583,6 +721,55 @@ Basic health check (not under `/api/v1`).
 **Response (200):**
 ```json
 { "status": "ok" }
+```
+
+---
+
+## SSE Event Types
+
+Streaming endpoints return JSON events in SSE `data:` lines. Each event has a `type` field.
+
+### Single-Agent Chat
+
+| Event | Payload | When |
+|-------|---------|------|
+| `status` | `{type, status, agent_name, model}` | Thinking, connecting, generating phases |
+| `token` | `{type, content}` | Each text chunk from the LLM |
+| `done` | `{type, content, model_used}` | Full response complete |
+| `error` | `{type, detail}` | Fatal error |
+| `keepalive` | `{type}` | Sent every 30s to keep connection alive |
+
+### Roundtable Chat
+
+All single-agent events plus:
+
+| Event | Payload | When |
+|-------|---------|------|
+| `round_start` | `{type, round, max_rounds}` | Beginning of each discussion round |
+| `agent_turn` | `{type, agent_id, agent_name, round}` | Before each agent speaks |
+| `done` | `{type, content, model_used, agent_id, agent_name}` | Agent finished (includes agent metadata) |
+| `agent_pass` | `{type, agent_id, agent_name}` | Agent has nothing to add |
+| `agent_error` | `{type, agent_id, agent_name, detail}` | Agent's LLM call failed (round continues) |
+| `consensus` | `{type, round, passes, total}` | Majority of agents passed — discussion ends |
+| `round_done` | `{type}` | All rounds complete |
+
+### Example Roundtable Flow
+
+```
+data: {"type":"round_start","round":1,"max_rounds":3}
+data: {"type":"agent_turn","agent_id":"abc","agent_name":"Security Analyst","round":1}
+data: {"type":"status","status":"thinking","agent_name":"Security Analyst","model":"ollama/llama3"}
+data: {"type":"status","status":"connecting"}
+data: {"type":"status","status":"generating"}
+data: {"type":"token","content":"The main "}
+data: {"type":"token","content":"concern here..."}
+data: {"type":"done","content":"The main concern here...","model_used":"ollama/llama3","agent_id":"abc","agent_name":"Security Analyst"}
+data: {"type":"agent_turn","agent_id":"def","agent_name":"DevOps Engineer","round":1}
+...
+data: {"type":"round_start","round":2,"max_rounds":3}
+...
+data: {"type":"consensus","round":2,"passes":3,"total":4}
+data: {"type":"round_done"}
 ```
 
 ---
@@ -617,3 +804,18 @@ Model IDs throughout the API use the `provider/model_name` format, which maps di
 | Anthropic | `anthropic/claude-opus-4-20250514`, `anthropic/claude-sonnet-4-20250514` |
 | Ollama    | `ollama/llama3`, `ollama/mistral`, `ollama/codellama`       |
 | Google    | `gemini/gemini-2.5-pro`, `gemini/gemini-2.5-flash`         |
+
+---
+
+## Collaboration Roles
+
+Agents can have a `collaboration_role` that shapes their behavior in roundtable discussions:
+
+| Role | Behavior |
+|------|----------|
+| `orchestrator` | Guides discussion, delegates questions, drives decisions |
+| `specialist` | Deep domain expertise, specific detailed answers |
+| `critic` | Evaluates ideas, finds flaws, identifies risks |
+| `synthesizer` | Combines viewpoints, drafts conclusions |
+| `researcher` | Provides data, evidence, factual grounding |
+| `devil_advocate` | Challenges prevailing opinion, stress-tests ideas |
