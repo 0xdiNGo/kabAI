@@ -178,6 +178,18 @@ class LLMService:
         kwargs = await self._get_model_kwargs(model)
         full_messages = self._build_messages(messages, agent, context, exemplars)
 
+        # Tell the agent it has web search capability
+        full_messages.insert(-1, {
+            "role": "system",
+            "content": (
+                "You have access to a web_search tool that can search the internet for current information. "
+                "When a question requires up-to-date facts, real-time data, or information not in your "
+                "knowledge base, use the web_search tool by calling it with a search query. "
+                "You can search multiple times to refine your results. "
+                "Do NOT tell the user you cannot search the web — you can."
+            ),
+        })
+
         # Try tool-use call. If the model doesn't support tools, fall back to regular streaming.
         try:
             yield json.dumps({"type": "status", "status": "connecting"})
