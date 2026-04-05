@@ -6,11 +6,13 @@ from app.core.redis import redis_client
 from app.core.security import decode_token
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.knowledge_repo import KnowledgeRepository
 from app.repositories.provider_repo import ProviderRepository
 from app.repositories.settings_repo import SettingsRepository
 from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
+from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 from app.services.orchestration.roundtable_service import RoundtableService
 from app.services.provider_service import ProviderService
@@ -45,6 +47,10 @@ def get_settings_repo(database=Depends(get_db)):
     return SettingsRepository(database)
 
 
+def get_knowledge_repo(database=Depends(get_db)):
+    return KnowledgeRepository(database)
+
+
 # Services
 def get_auth_service(
     user_repo: UserRepository = Depends(get_user_repo),
@@ -67,12 +73,20 @@ def get_llm_service(
     return LLMService(provider_service, settings_repo)
 
 
+def get_knowledge_service(
+    knowledge_repo: KnowledgeRepository = Depends(get_knowledge_repo),
+    llm_service: LLMService = Depends(get_llm_service),
+):
+    return KnowledgeService(knowledge_repo, llm_service)
+
+
 def get_conversation_service(
     conversation_repo: ConversationRepository = Depends(get_conversation_repo),
     agent_repo: AgentRepository = Depends(get_agent_repo),
     llm_service: LLMService = Depends(get_llm_service),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
-    return ConversationService(conversation_repo, agent_repo, llm_service)
+    return ConversationService(conversation_repo, agent_repo, llm_service, knowledge_service)
 
 
 def get_roundtable_service(
@@ -80,8 +94,9 @@ def get_roundtable_service(
     agent_repo: AgentRepository = Depends(get_agent_repo),
     llm_service: LLMService = Depends(get_llm_service),
     settings_repo: SettingsRepository = Depends(get_settings_repo),
+    knowledge_service: KnowledgeService = Depends(get_knowledge_service),
 ):
-    return RoundtableService(conversation_repo, agent_repo, llm_service, settings_repo)
+    return RoundtableService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service)
 
 
 # Auth dependencies

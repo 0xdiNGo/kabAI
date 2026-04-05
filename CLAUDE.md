@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tiger Team is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus.
+Tiger Team is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus. The platform also includes a knowledge base system for ingesting and organizing reference material (text, URLs, files, RFCs) that agents can draw on.
 
 ## Tech Stack
 
@@ -105,6 +105,24 @@ Roundtable mode: multiple agents discuss a topic across configurable rounds (def
 - `researcher` — provides data and evidence
 - `devil_advocate` — challenges prevailing opinion
 
+### Knowledge Base System
+
+Models: `KnowledgeBase`, `KnowledgeItem`, `IngestBatch` (in `models/`). Repository in `repositories/`, service in `services/knowledge_service.py`, API router in `api/v1/knowledge.py` (registered in `api/v1/router.py`).
+
+**Ingestion** supports text, URL, and file sources. Content is chunked and each chunk gets an LLM-generated title. See [docs/knowledge-ingestion.md](docs/knowledge-ingestion.md) for detailed diagrams.
+
+**RFC-aware ingestion** (`services/rfc_ingestor.py`): integrates with the IETF datatracker to pull RFCs, map lineage (obsoletes/updates chains), and analyze changes between versions.
+
+**Deep research mode**: when enabled, the ingestor follows related links discovered on ingested pages, recursively pulling in connected content.
+
+**Ingest model resolution**: KB-level override → system ingest default → system agent default. This allows each knowledge base to specify which model handles title generation and summarization.
+
+**IngestManager** (`services/ingest_manager.py`): runs ingestion as background tasks with status polling so the UI can track progress. Respects configurable limits: `max_items` (per batch) and `max_urls` (per URL crawl).
+
+### AI Agent Builder
+
+`POST /agents/build` generates full agent profiles (name, system prompt, collaboration role, etc.) from a free-text description. Uses an LLM call to produce a ready-to-save agent configuration.
+
 ### Frontend (`frontend/src/`)
 
 - **State**: Zustand stores (`stores/`) for auth state
@@ -112,20 +130,21 @@ Roundtable mode: multiple agents discuss a topic across configurable rounds (def
 - **SSE Streaming**: `lib/sse.ts` — POST-based SSE via fetch + ReadableStream (not EventSource)
 - **API Client**: `lib/api.ts` — typed fetch wrapper with JWT auth headers
 - **Theme**: Gruvbox dark palette defined in `tailwind.config.ts` under `colors.matrix.*`
-- **Pages**: Login, Dashboard, Chat, Agents (admin), Providers (admin + settings)
+- **Pages**: Login, Dashboard, Chat, Agents (admin), Providers (admin + settings), KnowledgeBasePage
 
 ### MongoDB Collections
 
-`users`, `agents`, `conversations` (messages embedded), `providers`, `settings`
+`users`, `agents`, `conversations` (messages embedded), `providers`, `settings`, `knowledge_bases`, `knowledge_items`, `ingest_batches`
 
 ### REST API
 
 All endpoints under `/api/v1`:
 - **Auth**: register, login, refresh, me
-- **Agents**: CRUD + bulk-model + export/import
+- **Agents**: CRUD + bulk-model + export/import + `POST /agents/build` (AI agent builder)
 - **Providers**: CRUD + model enumeration + test connectivity
 - **Conversations**: CRUD + streaming (with background task support) + status + event reconnection
 - **Settings**: get/update system settings (default model, max background chats, roundtable rounds)
+- **Knowledge Bases**: CRUD + ingestion (text/URL/file/RFC) + batch status + items listing
 
 Auth required on all except register/login. Admin role required for provider/agent/settings management.
 

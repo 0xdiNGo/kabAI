@@ -6,6 +6,7 @@ from app.models.conversation import Message
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.settings_repo import SettingsRepository
+from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 
 
@@ -16,11 +17,13 @@ class RoundtableService:
         agent_repo: AgentRepository,
         llm_service: LLMService,
         settings_repo: SettingsRepository,
+        knowledge_service: KnowledgeService,
     ):
         self.conversation_repo = conversation_repo
         self.agent_repo = agent_repo
         self.llm_service = llm_service
         self.settings_repo = settings_repo
+        self.knowledge_service = knowledge_service
 
     async def run_message_stream(
         self,
@@ -83,9 +86,17 @@ class RoundtableService:
                         agent.preferred_model, agent.fallback_models
                     )
 
+                    # Retrieve knowledge base context for this agent
+                    context = None
+                    if getattr(agent, "knowledge_base_ids", None):
+                        context = await self.knowledge_service.retrieve(
+                            content, agent.knowledge_base_ids
+                        )
+                        context = context if context else None
+
                     agent_content = ""
                     async for event_data in self.llm_service.stream_completion(
-                        model, thread, augmented_agent
+                        model, thread, augmented_agent, context
                     ):
                         event = json.loads(event_data)
 

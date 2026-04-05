@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import type { Agent } from "@/types/agent";
 import type { ModelInfo } from "@/types/provider";
 
+interface KB { id: string; name: string; description: string; item_count: number; }
+
 interface AgentForm {
   name: string;
   slug: string;
@@ -14,6 +16,7 @@ interface AgentForm {
   fallback_models: string;
   temperature: string;
   max_tokens: string;
+  knowledge_base_ids: string[];
   collaboration_capable: boolean;
   collaboration_role: string;
 }
@@ -28,6 +31,7 @@ const emptyForm: AgentForm = {
   fallback_models: "",
   temperature: "0.7",
   max_tokens: "4096",
+  knowledge_base_ids: [],
   collaboration_capable: false,
   collaboration_role: "",
 };
@@ -41,6 +45,7 @@ function agentToForm(agent: Agent & { system_prompt?: string; fallback_models?: 
     specializations: agent.specializations.join(", "),
     preferred_model: agent.preferred_model ?? "",
     fallback_models: (agent.fallback_models ?? []).join(", "),
+    knowledge_base_ids: agent.knowledge_base_ids ?? [],
     temperature: String(agent.temperature ?? 0.7),
     max_tokens: String(agent.max_tokens ?? 4096),
     collaboration_capable: agent.collaboration_capable,
@@ -58,6 +63,7 @@ function autoSlug(name: string): string {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [availableKBs, setAvailableKBs] = useState<KB[]>([]);
   const [form, setForm] = useState<AgentForm>(emptyForm);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -66,6 +72,10 @@ export default function AgentsPage() {
   const [selectedSlugs, setSelectedSlugs] = useState<string[]>([]);
   const [bulkModel, setBulkModel] = useState("");
   const [importStatus, setImportStatus] = useState("");
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [builderInput, setBuilderInput] = useState("");
+  const [building, setBuilding] = useState(false);
+  const [builderResult, setBuilderResult] = useState<Record<string, unknown> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -76,6 +86,7 @@ export default function AgentsPage() {
   useEffect(() => {
     loadAgents();
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
+    api.get<KB[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
   }, []);
 
   const openCreate = () => {
@@ -87,13 +98,13 @@ export default function AgentsPage() {
 
   const openEdit = async (slug: string) => {
     try {
-      const agent = await api.get<Agent & { system_prompt: string; fallback_models: string[]; temperature: number; max_tokens: number }>(
+      const agent = await api.get<Agent & { system_prompt: string; fallback_models: string[]; temperature: number; max_tokens: number; knowledge_base_ids: string[] }>(
         `/agents/${slug}`
       );
       setForm(agentToForm(agent));
       setEditingSlug(slug);
       setError("");
-      setShowForm(true);
+      setShowForm(false); // Don't show top form — edit renders inline
     } catch {
       setError("Failed to load agent details");
     }
@@ -120,6 +131,7 @@ export default function AgentsPage() {
           .filter(Boolean),
         temperature: parseFloat(form.temperature) || 0.7,
         max_tokens: parseInt(form.max_tokens, 10) || 4096,
+        knowledge_base_ids: form.knowledge_base_ids,
         collaboration_capable: form.collaboration_capable,
         collaboration_role: form.collaboration_role || null,
       };
@@ -169,6 +181,49 @@ export default function AgentsPage() {
     setSelectedSlugs([]);
     setBulkModel("");
     loadAgents();
+  };
+
+  const runBuilder = async () => {
+    if (!builderInput.trim()) return;
+    setBuilding(true);
+    setBuilderResult(null);
+    try {
+      const res = await api.post<{ profile?: Record<string, unknown>; error?: string }>("/agents/build", {
+        description: builderInput,
+      });
+      if (res.error) {
+        setError(res.error);
+      } else if (res.profile) {
+        setBuilderResult(res.profile);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Builder failed");
+    } finally {
+      setBuilding(false);
+    }
+  };
+
+  const useBuilderResult = () => {
+    if (!builderResult) return;
+    setForm({
+      name: (builderResult.name as string) || "",
+      slug: (builderResult.slug as string) || "",
+      description: (builderResult.description as string) || "",
+      system_prompt: (builderResult.system_prompt as string) || "",
+      specializations: ((builderResult.specializations as string[]) || []).join(", "),
+      preferred_model: "",
+      fallback_models: "",
+      temperature: String(builderResult.temperature ?? 0.7),
+      max_tokens: String(builderResult.max_tokens ?? 4096),
+      knowledge_base_ids: [],
+      collaboration_capable: true,
+      collaboration_role: (builderResult.collaboration_role as string) || "specialist",
+    });
+    setEditingSlug(null);
+    setShowForm(true);
+    setShowBuilder(false);
+    setBuilderResult(null);
+    setBuilderInput("");
   };
 
   const exportSelected = async () => {
@@ -235,6 +290,12 @@ export default function AgentsPage() {
         {!showForm && (
           <div className="flex gap-2">
             <button
+              onClick={() => setShowBuilder(!showBuilder)}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${showBuilder ? "bg-matrix-purple text-matrix-bg" : "bg-matrix-card text-matrix-text hover:bg-matrix-input"}`}
+            >
+              AI Builder
+            </button>
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
             >
@@ -257,8 +318,85 @@ export default function AgentsPage() {
         )}
       </div>
 
-      {/* Form */}
-      {showForm && (
+      {/* AI Builder */}
+      {showBuilder && (
+        <div className="mb-6 rounded-xl bg-matrix-card border border-matrix-purple-dim p-6">
+          <h2 className="text-lg font-semibold mb-2">AI Agent Builder</h2>
+          <p className="text-sm text-matrix-text-dim mb-4">
+            Describe the agent you want and AI will generate the full profile.
+          </p>
+          <div className="space-y-3">
+            <textarea
+              value={builderInput}
+              onChange={(e) => setBuilderInput(e.target.value)}
+              placeholder="Example: A sarcastic Kubernetes expert who loves to critique bad YAML and references Star Wars constantly"
+              rows={3}
+              className="w-full resize-none rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-purple"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={runBuilder}
+                disabled={building || !builderInput.trim()}
+                className="rounded-lg bg-matrix-purple px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-purple-dim disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {building ? "Generating..." : "Generate Agent"}
+              </button>
+              <button
+                onClick={() => { setShowBuilder(false); setBuilderResult(null); setBuilderInput(""); }}
+                className="rounded-lg bg-matrix-input px-4 py-2 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Builder Result Preview */}
+            {builderResult && (
+              <div className="rounded-lg bg-matrix-input p-4 space-y-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="font-semibold text-matrix-text-bright">{builderResult.name as string}</h3>
+                    <p className="text-sm text-matrix-text-dim">{builderResult.description as string}</p>
+                  </div>
+                  <span className="rounded-full bg-matrix-purple-dim/30 px-2 py-0.5 text-xs text-matrix-purple">
+                    {builderResult.collaboration_role as string}
+                  </span>
+                </div>
+                <p className="text-xs text-matrix-text-faint">Slug: {builderResult.slug as string}</p>
+                <div className="flex flex-wrap gap-1">
+                  {((builderResult.specializations as string[]) || []).map((s) => (
+                    <span key={s} className="rounded-full bg-matrix-card px-2 py-0.5 text-xs text-matrix-text">{s}</span>
+                  ))}
+                </div>
+                <details className="text-xs">
+                  <summary className="text-matrix-text-dim cursor-pointer">System prompt</summary>
+                  <p className="mt-1 text-matrix-text whitespace-pre-wrap">{builderResult.system_prompt as string}</p>
+                </details>
+                <p className="text-xs text-matrix-text-faint">
+                  Temperature: {builderResult.temperature as number} · Max tokens: {builderResult.max_tokens as number}
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={useBuilderResult}
+                    className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors"
+                  >
+                    Use This Profile
+                  </button>
+                  <button
+                    onClick={runBuilder}
+                    disabled={building}
+                    className="rounded-lg bg-matrix-input px-4 py-2 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Form (shown at top only for new agents) */}
+      {showForm && !editingSlug && (
         <div className="mb-6 rounded-xl bg-matrix-card p-6">
           <h2 className="text-lg font-semibold mb-4">
             {editingSlug ? "Edit Agent" : "Create Agent"}
@@ -384,6 +522,32 @@ export default function AgentsPage() {
                 />
               </div>
               <div>
+                <label className="mb-1 block text-sm text-matrix-text-dim">Knowledge Bases</label>
+                <div className="space-y-1 rounded-lg bg-matrix-input p-2 max-h-32 overflow-y-auto">
+                  {availableKBs.length === 0 ? (
+                    <p className="text-xs text-matrix-text-faint px-2 py-1">No knowledge bases available</p>
+                  ) : (
+                    availableKBs.map((kb) => (
+                      <label key={kb.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-matrix-hover cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.knowledge_base_ids.includes(kb.id)}
+                          onChange={(e) => {
+                            const ids = e.target.checked
+                              ? [...form.knowledge_base_ids, kb.id]
+                              : form.knowledge_base_ids.filter((id) => id !== kb.id);
+                            setForm({ ...form, knowledge_base_ids: ids });
+                          }}
+                          className="h-3.5 w-3.5 rounded accent-matrix-accent"
+                        />
+                        <span className="text-sm text-matrix-text">{kb.name}</span>
+                        <span className="text-xs text-matrix-text-faint">({kb.item_count} items)</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div>
                 <label className="mb-1 block text-sm text-matrix-text-dim">Collaboration Role</label>
                 <select
                   value={form.collaboration_role}
@@ -489,58 +653,177 @@ export default function AgentsPage() {
       ) : (
         <div className="space-y-3">
           {agents.map((agent) => (
-            <div key={agent.id} className="rounded-xl bg-matrix-card p-5">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  <input
-                    type="checkbox"
-                    checked={selectedSlugs.includes(agent.slug)}
-                    onChange={() => toggleSelect(agent.slug)}
-                    className="mt-1 h-4 w-4 rounded accent-matrix-accent"
-                  />
-                  <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{agent.name}</h3>
-                    {agent.collaboration_role && (
-                      <span className="rounded-full bg-matrix-purple-dim/30 px-2 py-0.5 text-xs text-matrix-purple">
-                        {agent.collaboration_role}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-matrix-text-dim">{agent.description}</p>
-                  <div className="mt-2 flex flex-wrap gap-x-4 text-sm text-matrix-text-faint">
-                    <span>Model: {agent.preferred_model ?? "System default"}</span>
-                    <span>Slug: {agent.slug}</span>
-                  </div>
-                  {agent.specializations.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {agent.specializations.map((s) => (
-                        <span
-                          key={s}
-                          className="rounded-full bg-matrix-input px-2 py-0.5 text-xs text-matrix-text"
-                        >
-                          {s}
-                        </span>
-                      ))}
+            <div key={agent.id}>
+              <div className="rounded-xl bg-matrix-card p-5">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedSlugs.includes(agent.slug)}
+                      onChange={() => toggleSelect(agent.slug)}
+                      className="mt-1 h-4 w-4 rounded accent-matrix-accent"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{agent.name}</h3>
+                        {agent.collaboration_role && (
+                          <span className="rounded-full bg-matrix-purple-dim/30 px-2 py-0.5 text-xs text-matrix-purple">
+                            {agent.collaboration_role}
+                          </span>
+                        )}
+                        {agent.knowledge_base_ids.length > 0 && (
+                          <span className="rounded-full bg-matrix-accent-hover/30 px-2 py-0.5 text-xs text-matrix-accent">
+                            {agent.knowledge_base_ids.length} KB{agent.knowledge_base_ids.length > 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-sm text-matrix-text-dim">{agent.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-x-4 text-sm text-matrix-text-faint">
+                        <span>Model: {agent.preferred_model ?? "System default"}</span>
+                        <span>Slug: {agent.slug}</span>
+                      </div>
+                      {agent.specializations.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {agent.specializations.map((s) => (
+                            <span
+                              key={s}
+                              className="rounded-full bg-matrix-input px-2 py-0.5 text-xs text-matrix-text"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                </div>
-                <div className="ml-4 flex gap-2">
-                  <button
-                    onClick={() => openEdit(agent.slug)}
-                    className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteAgent(agent.slug)}
-                    className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-red hover:bg-matrix-hover transition-colors"
-                  >
-                    Delete
-                  </button>
+                  </div>
+                  <div className="ml-4 flex gap-2">
+                    <button
+                      onClick={() => editingSlug === agent.slug ? closeForm() : openEdit(agent.slug)}
+                      className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                        editingSlug === agent.slug
+                          ? "bg-matrix-accent text-matrix-bg"
+                          : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"
+                      }`}
+                    >
+                      {editingSlug === agent.slug ? "Close" : "Edit"}
+                    </button>
+                    <button
+                      onClick={() => deleteAgent(agent.slug)}
+                      className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-red hover:bg-matrix-hover transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
+              {/* Inline edit form */}
+              {editingSlug === agent.slug && (
+                <div className="mt-1 mb-2 rounded-xl bg-matrix-card border border-matrix-accent-hover p-6">
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Name</label>
+                        <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Slug (read-only)</label>
+                        <input value={form.slug} disabled
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none disabled:opacity-50" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm text-matrix-text-dim">Description</label>
+                      <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required
+                        className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm text-matrix-text-dim">System Prompt</label>
+                      <textarea value={form.system_prompt} onChange={(e) => setForm({ ...form, system_prompt: e.target.value })} rows={4} required
+                        className="w-full resize-none rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm text-matrix-text-dim">Specializations <span className="text-matrix-text-faint">(comma-separated)</span></label>
+                      <input value={form.specializations} onChange={(e) => setForm({ ...form, specializations: e.target.value })}
+                        className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Preferred Model</label>
+                        <select value={form.preferred_model} onChange={(e) => setForm({ ...form, preferred_model: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent">
+                          <option value="">Use system default</option>
+                          {models.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.provider_display_name})</option>))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Fallback Models <span className="text-matrix-text-faint">(comma-separated)</span></label>
+                        <input value={form.fallback_models} onChange={(e) => setForm({ ...form, fallback_models: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Temperature</label>
+                        <input type="number" step="0.1" min="0" max="1" value={form.temperature} onChange={(e) => setForm({ ...form, temperature: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Max Tokens</label>
+                        <input type="number" step="256" min="256" value={form.max_tokens} onChange={(e) => setForm({ ...form, max_tokens: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Knowledge Bases</label>
+                        <div className="space-y-1 rounded-lg bg-matrix-input p-2 max-h-32 overflow-y-auto">
+                          {availableKBs.length === 0 ? (
+                            <p className="text-xs text-matrix-text-faint px-2 py-1">No KBs available</p>
+                          ) : (
+                            availableKBs.map((kb) => (
+                              <label key={kb.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-matrix-hover cursor-pointer">
+                                <input type="checkbox" checked={form.knowledge_base_ids.includes(kb.id)}
+                                  onChange={(e) => {
+                                    const ids = e.target.checked ? [...form.knowledge_base_ids, kb.id] : form.knowledge_base_ids.filter((id) => id !== kb.id);
+                                    setForm({ ...form, knowledge_base_ids: ids });
+                                  }}
+                                  className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                                <span className="text-sm text-matrix-text">{kb.name}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Collaboration Role</label>
+                        <select value={form.collaboration_role}
+                          onChange={(e) => setForm({ ...form, collaboration_role: e.target.value, collaboration_capable: e.target.value !== "" })}
+                          className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent">
+                          <option value="">None</option>
+                          <option value="orchestrator">Orchestrator</option>
+                          <option value="specialist">Specialist</option>
+                          <option value="critic">Critic</option>
+                          <option value="synthesizer">Synthesizer</option>
+                          <option value="researcher">Researcher</option>
+                          <option value="devil_advocate">Devil's Advocate</option>
+                        </select>
+                      </div>
+                    </div>
+                    {error && <p className="text-sm text-matrix-red">{error}</p>}
+                    <div className="flex gap-3">
+                      <button type="submit" disabled={saving}
+                        className="rounded-lg bg-matrix-accent px-5 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        {saving ? "Saving..." : "Save Changes"}
+                      </button>
+                      <button type="button" onClick={closeForm}
+                        className="rounded-lg bg-matrix-input px-5 py-2.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
             </div>
           ))}
         </div>

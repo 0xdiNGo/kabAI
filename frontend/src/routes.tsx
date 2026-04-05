@@ -5,6 +5,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import ChatPage from "@/pages/ChatPage";
 import ProvidersPage from "@/pages/ProvidersPage";
 import AgentsPage from "@/pages/AgentsPage";
+import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -30,6 +31,14 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <AgentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/knowledge-bases"
+          element={
+            <ProtectedRoute>
+              <KnowledgeBasePage />
             </ProtectedRoute>
           }
         />

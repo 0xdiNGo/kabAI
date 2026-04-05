@@ -9,7 +9,9 @@ from app.config import settings
 from app.core.database import db
 from app.core.exceptions import TigerTeamError
 from app.core.redis import redis_client
+from app.repositories.knowledge_repo import KnowledgeRepository
 from app.services.background_manager import BackgroundTaskManager
+from app.services.ingest_manager import IngestManager
 
 
 @asynccontextmanager
@@ -18,8 +20,13 @@ async def lifespan(app: FastAPI):
     await db.connect(settings.mongodb_url, settings.mongodb_db_name)
     await redis_client.connect(settings.redis_url)
     app.state.background_manager = BackgroundTaskManager()
+    app.state.ingest_manager = IngestManager()
+    # Ensure indexes
+    knowledge_repo = KnowledgeRepository(db.db)
+    await knowledge_repo.ensure_indexes()
     yield
     # Shutdown
+    await app.state.ingest_manager.shutdown()
     await app.state.background_manager.shutdown()
     await redis_client.disconnect()
     await db.disconnect()

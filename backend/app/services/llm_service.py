@@ -70,11 +70,12 @@ class LLMService:
         model: str,
         messages: list[dict],
         agent: Agent | None = None,
+        context: list | None = None,
     ) -> dict:
         """Non-streaming completion. Returns the full message."""
         kwargs = await self._get_model_kwargs(model)
 
-        full_messages = self._build_messages(messages, agent)
+        full_messages = self._build_messages(messages, agent, context)
         response = await litellm.acompletion(
             model=model,
             messages=full_messages,
@@ -94,6 +95,7 @@ class LLMService:
         model: str,
         messages: list[dict],
         agent: Agent | None = None,
+        context: list | None = None,
     ) -> AsyncGenerator[str, None]:
         """Streaming completion. Yields SSE-formatted events."""
         yield json.dumps({
@@ -104,7 +106,7 @@ class LLMService:
         })
 
         kwargs = await self._get_model_kwargs(model)
-        full_messages = self._build_messages(messages, agent)
+        full_messages = self._build_messages(messages, agent, context)
 
         yield json.dumps({"type": "status", "status": "connecting"})
 
@@ -132,9 +134,32 @@ class LLMService:
             "content": full_content,
         })
 
-    def _build_messages(self, messages: list[dict], agent: Agent | None) -> list[dict]:
+    def _build_messages(
+        self, messages: list[dict], agent: Agent | None, context: list | None = None
+    ) -> list[dict]:
         full_messages = []
+
+        # Inject knowledge base context
+        if context:
+            context_block = (
+                "[CONTEXT — Answer ONLY from this information. "
+                "If the answer is not here, say so.]\n\n"
+            )
+            for item in context:
+                context_block += f"--- {item.title} ---\n{item.content}\n\n"
+            full_messages.append({"role": "system", "content": context_block})
+
+        # Agent system prompt with grounding instruction
         if agent and agent.system_prompt:
-            full_messages.append({"role": "system", "content": agent.system_prompt})
+            prompt = agent.system_prompt
+            if context:
+                prompt += (
+                    "\n\nIMPORTANT: You have been provided with a knowledge base context. "
+                    "Base your answers on that context. If the context doesn't contain enough "
+                    "information to answer accurately, say \"I don't have that information in "
+                    "my knowledge base\" — never fabricate information."
+                )
+            full_messages.append({"role": "system", "content": prompt})
+
         full_messages.extend(messages)
         return full_messages

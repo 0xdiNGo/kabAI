@@ -9,14 +9,20 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 class SettingsResponse(BaseModel):
     default_model: str | None
+    default_ingest_model: str | None
     max_background_chats: int
     roundtable_max_rounds: int
+    ingest_max_items: int
+    ingest_max_urls: int
 
 
 class SettingsUpdate(BaseModel):
     default_model: str | None = None
+    default_ingest_model: str | None = None
     max_background_chats: int | None = None
     roundtable_max_rounds: int | None = None
+    ingest_max_items: int | None = None
+    ingest_max_urls: int | None = None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -27,8 +33,11 @@ async def get_settings(
     settings = await repo.get()
     return SettingsResponse(
         default_model=settings.default_model,
+        default_ingest_model=settings.default_ingest_model,
         max_background_chats=settings.max_background_chats,
         roundtable_max_rounds=settings.roundtable_max_rounds,
+        ingest_max_items=settings.ingest_max_items,
+        ingest_max_urls=settings.ingest_max_urls,
     )
 
 
@@ -39,7 +48,10 @@ async def update_settings(
     repo: SettingsRepository = Depends(get_settings_repo),
 ):
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "default_model" in body.model_dump(exclude_unset=False):
-        updates["default_model"] = body.default_model
+    # Allow explicitly setting nullable fields to null
+    raw = body.model_dump(exclude_unset=False)
+    for field in ("default_model", "default_ingest_model"):
+        if field in raw:
+            updates[field] = raw[field]
     await repo.update(updates)
     return {"message": "Settings updated"}

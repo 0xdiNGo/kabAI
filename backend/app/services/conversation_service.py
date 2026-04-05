@@ -5,6 +5,7 @@ from app.core.exceptions import NotFoundError
 from app.models.conversation import Conversation, Message
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
+from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 
 
@@ -14,10 +15,12 @@ class ConversationService:
         conversation_repo: ConversationRepository,
         agent_repo: AgentRepository,
         llm_service: LLMService,
+        knowledge_service: KnowledgeService,
     ):
         self.conversation_repo = conversation_repo
         self.agent_repo = agent_repo
         self.llm_service = llm_service
+        self.knowledge_service = knowledge_service
 
     async def create_conversation(
         self, user_id: str, agent_id: str | None = None,
@@ -47,6 +50,13 @@ class ConversationService:
     ) -> list[Conversation]:
         return await self.conversation_repo.find_by_user(user_id, limit, offset)
 
+    async def _retrieve_context(self, agent, query: str):
+        """Retrieve knowledge base context for an agent if it has KBs assigned."""
+        if not agent or not getattr(agent, "knowledge_base_ids", None):
+            return None
+        items = await self.knowledge_service.retrieve(query, agent.knowledge_base_ids)
+        return items if items else None
+
     async def send_message(
         self, conversation_id: str, user_id: str, content: str
     ) -> dict:
@@ -67,12 +77,15 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
+        # Retrieve knowledge base context
+        context = await self._retrieve_context(agent, content)
+
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]
         messages.append({"role": "user", "content": content})
 
         # Get LLM response
-        result = await self.llm_service.complete(model, messages, agent)
+        result = await self.llm_service.complete(model, messages, agent, context)
 
         # Save assistant message
         assistant_msg = Message(
@@ -113,13 +126,18 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
+        # Retrieve knowledge base context
+        context = await self._retrieve_context(agent, content)
+
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]
         messages.append({"role": "user", "content": content})
 
         # Stream LLM response, pushing events to queue
         full_content = ""
-        async for event_data in self.llm_service.stream_completion(model, messages, agent):
+        async for event_data in self.llm_service.stream_completion(
+            model, messages, agent, context
+        ):
             event = json.loads(event_data)
             if event["type"] == "token":
                 full_content += event["content"]

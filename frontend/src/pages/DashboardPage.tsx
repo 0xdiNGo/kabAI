@@ -69,6 +69,12 @@ export default function DashboardPage() {
         {user?.role === "admin" && (
           <div className="flex gap-2">
             <button
+              onClick={() => navigate("/knowledge-bases")}
+              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
+            >
+              Knowledge Bases
+            </button>
+            <button
               onClick={() => navigate("/agents/manage")}
               className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
             >

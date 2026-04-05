@@ -141,6 +141,7 @@ List all active agents.
     "avatar_url": null,
     "specializations": ["architecture", "code-review"],
     "preferred_model": "openai/gpt-4o",
+    "knowledge_base_ids": [],
     "collaboration_capable": true,
     "collaboration_role": "specialist",
     "is_active": true
@@ -197,8 +198,9 @@ Create a new agent.
 | `fallback_models`       | string[] | no       | []      | Tried in order if preferred fails  |
 | `temperature`           | float    | no       | 0.7     | 0.0 to 1.0                        |
 | `max_tokens`            | int      | no       | 4096    |                                    |
+| `knowledge_base_ids`    | string[] | no       | []      | IDs of linked knowledge bases      |
 | `collaboration_capable` | bool     | no       | false   |                                    |
-| `collaboration_role`    | string   | no       | null    | `"orchestrator"` or `"specialist"` |
+| `collaboration_role`    | string   | no       | null    | One of: `orchestrator`, `specialist`, `critic`, `synthesizer`, `researcher`, `devil_advocate` |
 
 **Response (201):**
 ```json
@@ -319,6 +321,46 @@ Import agents from a JSON archive. Skips agents whose slug already exists.
   "skipped_slugs": ["security-analyst"]
 }
 ```
+
+---
+
+### POST /agents/build
+
+Use AI to generate an agent profile from a natural-language description.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "description": "A Kubernetes expert who is sarcastic"
+}
+```
+
+| Field         | Type   | Required | Notes                            |
+|---------------|--------|----------|----------------------------------|
+| `description` | string | yes      | What kind of agent the user wants |
+
+**Response (200):**
+```json
+{
+  "profile": {
+    "name": "K8s Overlord",
+    "slug": "k8s-overlord",
+    "description": "Sarcastic Kubernetes guru who judges your YAML.",
+    "system_prompt": "You are a senior Kubernetes engineer with a dry, sarcastic wit...",
+    "specializations": ["kubernetes", "containers", "devops"],
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "collaboration_role": "specialist"
+  }
+}
+```
+
+**Notes:**
+- Uses the system default model to generate the profile
+- The returned profile is not saved automatically — pass it to `POST /agents` to create the agent
+- If the AI output cannot be parsed as JSON, returns `{"error": "Failed to parse AI response", "raw": "..."}`
 
 ---
 
@@ -507,11 +549,11 @@ List the current user's conversations.
 
 ### POST /conversations
 
-Create a new conversation. Provide either `agent_id` (agent-based chat) or `model` (direct model chat).
+Create a new conversation. Three modes are supported: single-agent chat, direct model chat, or roundtable collaboration.
 
 **Auth required:** Yes
 
-**Request (agent-based):**
+**Request (single agent):**
 ```json
 {
   "agent_id": "507f1f77bcf86cd799439012",
@@ -527,11 +569,22 @@ Create a new conversation. Provide either `agent_id` (agent-based chat) or `mode
 }
 ```
 
-| Field      | Type   | Required | Notes                               |
-|------------|--------|----------|-------------------------------------|
-| `agent_id` | string | no       | Use agent's model and system prompt |
-| `model`    | string | no       | Required if `agent_id` is null      |
-| `title`    | string | no       | Auto-generated if omitted           |
+**Request (roundtable collaboration):**
+```json
+{
+  "agent_ids": ["507f1f77bcf86cd799439012", "507f1f77bcf86cd799439013", "507f1f77bcf86cd799439014"],
+  "collaboration_mode": "roundtable",
+  "title": "Security architecture review"
+}
+```
+
+| Field                | Type     | Required | Notes                                        |
+|----------------------|----------|----------|----------------------------------------------|
+| `agent_id`           | string   | no       | Use agent's model and system prompt          |
+| `agent_ids`          | string[] | no       | List of agent IDs for roundtable mode        |
+| `collaboration_mode` | string   | no       | Set to `"roundtable"` for multi-agent chat   |
+| `model`              | string   | no       | Required if `agent_id` is null and not roundtable |
+| `title`              | string   | no       | Auto-generated if omitted                    |
 
 **Response (201):**
 ```json
@@ -679,10 +732,22 @@ Get system settings.
 ```json
 {
   "default_model": "ollama/llama3",
+  "default_ingest_model": "openai/gpt-4o-mini",
   "max_background_chats": 5,
-  "roundtable_max_rounds": 3
+  "roundtable_max_rounds": 3,
+  "ingest_max_items": 500,
+  "ingest_max_urls": 20
 }
 ```
+
+| Field                  | Type         | Notes                                              |
+|------------------------|--------------|----------------------------------------------------|
+| `default_model`        | string/null  | Default LLM for chat when no agent model is set    |
+| `default_ingest_model` | string/null  | Default LLM for knowledge base ingestion tasks     |
+| `max_background_chats` | int          | Max concurrent background streaming chats          |
+| `roundtable_max_rounds`| int          | Max discussion rounds in roundtable mode           |
+| `ingest_max_items`     | int          | Max items per knowledge base ingest operation      |
+| `ingest_max_urls`      | int          | Max URLs to crawl in a deep ingest-url operation   |
 
 ---
 
@@ -696,16 +761,470 @@ Update system settings.
 ```json
 {
   "default_model": "ollama/llama3",
+  "default_ingest_model": "openai/gpt-4o-mini",
   "max_background_chats": 10,
-  "roundtable_max_rounds": 5
+  "roundtable_max_rounds": 5,
+  "ingest_max_items": 1000,
+  "ingest_max_urls": 50
 }
 ```
 
-All fields optional — only include what you want to change. Set `default_model` to `null` to clear.
+| Field                  | Type        | Required | Notes                                           |
+|------------------------|-------------|----------|-------------------------------------------------|
+| `default_model`        | string/null | no       | Set to `null` to clear                          |
+| `default_ingest_model` | string/null | no       | Set to `null` to clear                          |
+| `max_background_chats` | int         | no       |                                                 |
+| `roundtable_max_rounds`| int         | no       |                                                 |
+| `ingest_max_items`     | int         | no       |                                                 |
+| `ingest_max_urls`      | int         | no       |                                                 |
+
+All fields optional -- only include what you want to change.
 
 **Response (200):**
 ```json
 { "message": "Settings updated" }
+```
+
+---
+
+## Knowledge Bases
+
+Knowledge bases store chunked content (text, web pages) that agents can reference during conversations. Items are organized into batches for version control and rollback.
+
+### GET /knowledge-bases
+
+List all knowledge bases.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+[
+  {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "Internal Docs",
+    "description": "Company engineering documentation",
+    "ingest_model": "openai/gpt-4o-mini",
+    "item_count": 142,
+    "created_at": "2026-04-01T10:00:00",
+    "updated_at": "2026-04-03T15:30:00"
+  }
+]
+```
+
+---
+
+### POST /knowledge-bases
+
+Create a new knowledge base.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "name": "Internal Docs",
+  "description": "Company engineering documentation",
+  "ingest_model": "openai/gpt-4o-mini"
+}
+```
+
+| Field          | Type   | Required | Default | Notes                                          |
+|----------------|--------|----------|---------|-------------------------------------------------|
+| `name`         | string | yes      |         | Display name                                    |
+| `description`  | string | no       | `""`    |                                                 |
+| `ingest_model` | string | no       | null    | LLM used for chunking/processing during ingest  |
+
+**Response (201):**
+```json
+{ "id": "507f1f77bcf86cd799439011" }
+```
+
+---
+
+### GET /knowledge-bases/{kb_id}
+
+Get a single knowledge base by ID.
+
+**Auth required:** Yes
+
+**Response (200):** Same shape as list item above.
+
+**Errors:** 404 if not found.
+
+---
+
+### PUT /knowledge-bases/{kb_id}
+
+Update a knowledge base. Only include fields you want to change.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "name": "Updated Docs",
+  "description": "Revised description",
+  "ingest_model": null
+}
+```
+
+| Field          | Type   | Required | Notes                           |
+|----------------|--------|----------|---------------------------------|
+| `name`         | string | no       |                                 |
+| `description`  | string | no       |                                 |
+| `ingest_model` | string | no       | Set to `null` to clear          |
+
+**Response (200):**
+```json
+{ "message": "Knowledge base updated" }
+```
+
+**Errors:** 404 if not found.
+
+---
+
+### DELETE /knowledge-bases/{kb_id}
+
+Delete a knowledge base and all its items.
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{ "message": "Knowledge base deleted" }
+```
+
+---
+
+### POST /knowledge-bases/{kb_id}/ingest
+
+Ingest raw text content into a knowledge base. The text is chunked and processed in the background.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "content": "Full text content to ingest...",
+  "source": "architecture-doc.md"
+}
+```
+
+| Field     | Type   | Required | Default | Notes                         |
+|-----------|--------|----------|---------|-------------------------------|
+| `content` | string | yes      |         | Raw text to ingest            |
+| `source`  | string | no       | null    | Label for tracking origin     |
+
+**Response (200):**
+```json
+{ "status": "started", "kb_id": "507f1f77bcf86cd799439011" }
+```
+
+**Notes:**
+- Runs as a background task -- poll `/ingest-status` to track progress
+- 404 if knowledge base not found
+
+---
+
+### POST /knowledge-bases/{kb_id}/ingest-url
+
+Ingest content from a URL. Optionally crawl linked pages.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "url": "https://docs.example.com/guide",
+  "deep": true
+}
+```
+
+| Field  | Type | Required | Default | Notes                                          |
+|--------|------|----------|---------|-------------------------------------------------|
+| `url`  | string | yes    |         | URL to fetch and ingest                        |
+| `deep` | bool   | no     | false   | If true, also crawl and ingest linked pages    |
+
+**Response (200):**
+```json
+{ "status": "started", "kb_id": "507f1f77bcf86cd799439011" }
+```
+
+**Notes:**
+- Runs as a background task -- poll `/ingest-status` to track progress
+- When `deep` is true, the crawler follows links from the initial page (limited by the `ingest_max_urls` setting)
+- 404 if knowledge base not found
+
+---
+
+### GET /knowledge-bases/{kb_id}/ingest-status
+
+Poll for the status of a running ingest task.
+
+**Auth required:** Yes
+
+**Response (200) -- idle (no active task):**
+```json
+{ "state": "idle" }
+```
+
+**Response (200) -- in progress:**
+```json
+{
+  "state": "running",
+  "current_step": "Chunking document...",
+  "items_created": 12,
+  "urls_processed": 3,
+  "error": null,
+  "result": null
+}
+```
+
+**Response (200) -- completed:**
+```json
+{
+  "state": "completed",
+  "current_step": "Done",
+  "items_created": 42,
+  "urls_processed": 5,
+  "error": null,
+  "result": { "items_created": 42 }
+}
+```
+
+| Field            | Type        | Notes                                         |
+|------------------|-------------|-----------------------------------------------|
+| `state`          | string      | `idle`, `running`, `completed`, or `failed`   |
+| `current_step`   | string/null | Human-readable progress description           |
+| `items_created`  | int         | Number of items created so far                |
+| `urls_processed` | int         | Number of URLs fetched (for URL ingest)       |
+| `error`          | string/null | Error message if `state` is `failed`          |
+| `result`         | object/null | Final result when `state` is `completed`      |
+
+---
+
+### GET /knowledge-bases/{kb_id}/items
+
+List items in a knowledge base with pagination.
+
+**Auth required:** Yes
+
+**Query parameters:**
+
+| Param    | Type | Default | Notes           |
+|----------|------|---------|-----------------|
+| `limit`  | int  | 100     | Max results     |
+| `offset` | int  | 0       | Pagination skip |
+
+**Response (200):**
+```json
+[
+  {
+    "id": "507f1f77bcf86cd799439020",
+    "title": "Architecture Overview",
+    "content": "The system uses a three-layer architecture...",
+    "source": "architecture-doc.md",
+    "chunk_index": 0
+  }
+]
+```
+
+---
+
+### DELETE /knowledge-bases/{kb_id}/items/{item_id}
+
+Delete a single item from a knowledge base.
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{ "message": "Item deleted" }
+```
+
+---
+
+### GET /knowledge-bases/{kb_id}/batches
+
+List ingest batches for a knowledge base. Each ingest operation creates a batch, enabling rollback.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+[
+  {
+    "id": "507f1f77bcf86cd799439030",
+    "source": "architecture-doc.md",
+    "item_count": 15,
+    "created_at": "2026-04-02T09:00:00"
+  }
+]
+```
+
+---
+
+### DELETE /knowledge-bases/{kb_id}/batches/{batch_id}
+
+Rollback an ingest batch -- deletes all items that were created in that batch.
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{ "items_deleted": 15 }
+```
+
+---
+
+### GET /knowledge-bases/{kb_id}/sources
+
+List distinct sources in a knowledge base with item counts.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+[
+  { "source": "architecture-doc.md", "count": 15 },
+  { "source": "https://docs.example.com/guide", "count": 27 }
+]
+```
+
+---
+
+### POST /knowledge-bases/{kb_id}/delete-by-source
+
+Bulk-delete all items from a specific source.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "source": "architecture-doc.md"
+}
+```
+
+| Field    | Type   | Required | Notes                         |
+|----------|--------|----------|-------------------------------|
+| `source` | string | yes      | Source label to match          |
+
+**Response (200):**
+```json
+{ "items_deleted": 15 }
+```
+
+---
+
+### POST /knowledge-bases/{kb_id}/search
+
+Search within a knowledge base by text query.
+
+**Auth required:** Yes
+
+**Request:**
+```json
+{
+  "query": "microservices architecture",
+  "limit": 10
+}
+```
+
+| Field   | Type   | Required | Default | Notes                |
+|---------|--------|----------|---------|----------------------|
+| `query` | string | yes      |         | Search text          |
+| `limit` | int    | no       | 20      | Max results          |
+
+**Response (200):**
+```json
+[
+  {
+    "id": "507f1f77bcf86cd799439020",
+    "title": "Architecture Overview",
+    "content": "The system uses a three-layer architecture...",
+    "source": "architecture-doc.md",
+    "chunk_index": 0
+  }
+]
+```
+
+---
+
+### GET /knowledge-bases/{kb_id}/export
+
+Export a knowledge base as a JSON archive (metadata + all items).
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{
+  "name": "Internal Docs",
+  "description": "Company engineering documentation",
+  "ingest_model": "openai/gpt-4o-mini",
+  "items": [
+    {
+      "id": "507f1f77bcf86cd799439020",
+      "title": "Architecture Overview",
+      "content": "The system uses a three-layer architecture...",
+      "source": "architecture-doc.md",
+      "chunk_index": 0
+    }
+  ]
+}
+```
+
+**Errors:** 404 if knowledge base not found.
+
+---
+
+### POST /knowledge-bases/import
+
+Import a knowledge base from a JSON archive. Creates a new knowledge base with the provided items.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "name": "Imported Docs",
+  "description": "Documentation from another instance",
+  "ingest_model": null,
+  "items": [
+    {
+      "title": "Architecture Overview",
+      "content": "The system uses a three-layer architecture...",
+      "source": "architecture-doc.md",
+      "chunk_index": 0
+    }
+  ]
+}
+```
+
+| Field          | Type   | Required | Default | Notes                               |
+|----------------|--------|----------|---------|-------------------------------------|
+| `name`         | string | yes      |         | Name for the new knowledge base     |
+| `description`  | string | no       | `""`    |                                     |
+| `ingest_model` | string | no       | null    |                                     |
+| `items`        | array  | yes      |         | Array of item objects to import     |
+
+Each item in the `items` array:
+
+| Field         | Type   | Required | Default    | Notes               |
+|---------------|--------|----------|------------|----------------------|
+| `title`       | string | no       | "Untitled" |                      |
+| `content`     | string | no       | `""`       |                      |
+| `source`      | string | no       | null       |                      |
+| `chunk_index` | int    | no       | auto       | Defaults to array index |
+
+**Response (201):**
+```json
+{
+  "id": "507f1f77bcf86cd799439011",
+  "items_created": 42
+}
 ```
 
 ---

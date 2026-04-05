@@ -49,8 +49,14 @@ export default function ProvidersPage() {
   const [selectedDefault, setSelectedDefault] = useState("");
   const [maxBackgroundChats, setMaxBackgroundChats] = useState(5);
   const [editMaxBg, setEditMaxBg] = useState("5");
+  const [defaultIngestModel, setDefaultIngestModel] = useState<string | null>(null);
+  const [selectedIngestDefault, setSelectedIngestDefault] = useState("");
   const [maxRounds, setMaxRounds] = useState(3);
   const [editMaxRounds, setEditMaxRounds] = useState("3");
+  const [ingestMaxItems, setIngestMaxItems] = useState(200);
+  const [editIngestMaxItems, setEditIngestMaxItems] = useState("200");
+  const [ingestMaxUrls, setIngestMaxUrls] = useState(10);
+  const [editIngestMaxUrls, setEditIngestMaxUrls] = useState("10");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderForm>(emptyForm);
   const [testResults, setTestResults] = useState<Record<string, { status: string; detail?: string }>>({});
@@ -67,13 +73,23 @@ export default function ProvidersPage() {
   };
 
   const loadSettings = () => {
-    api.get<{ default_model: string | null; max_background_chats: number; roundtable_max_rounds: number }>("/settings").then((s) => {
+    api.get<{
+      default_model: string | null; default_ingest_model: string | null;
+      max_background_chats: number; roundtable_max_rounds: number;
+      ingest_max_items: number; ingest_max_urls: number;
+    }>("/settings").then((s) => {
       setDefaultModel(s.default_model);
       setSelectedDefault(s.default_model ?? "");
+      setDefaultIngestModel(s.default_ingest_model);
+      setSelectedIngestDefault(s.default_ingest_model ?? "");
       setMaxBackgroundChats(s.max_background_chats);
       setEditMaxBg(String(s.max_background_chats));
       setMaxRounds(s.roundtable_max_rounds);
       setEditMaxRounds(String(s.roundtable_max_rounds));
+      setIngestMaxItems(s.ingest_max_items);
+      setEditIngestMaxItems(String(s.ingest_max_items));
+      setIngestMaxUrls(s.ingest_max_urls);
+      setEditIngestMaxUrls(String(s.ingest_max_urls));
     }).catch(() => {});
   };
 
@@ -93,6 +109,20 @@ export default function ProvidersPage() {
     if (isNaN(val) || val < 0) return;
     await api.put("/settings", { max_background_chats: val });
     setMaxBackgroundChats(val);
+  };
+
+  const saveIngestDefault = async () => {
+    await api.put("/settings", { default_ingest_model: selectedIngestDefault || null });
+    setDefaultIngestModel(selectedIngestDefault || null);
+  };
+
+  const saveIngestLimits = async () => {
+    const items = parseInt(editIngestMaxItems, 10);
+    const urls = parseInt(editIngestMaxUrls, 10);
+    if (isNaN(items) || isNaN(urls) || items < 1 || urls < 1) return;
+    await api.put("/settings", { ingest_max_items: items, ingest_max_urls: urls });
+    setIngestMaxItems(items);
+    setIngestMaxUrls(urls);
   };
 
   const saveMaxRounds = async () => {
@@ -214,6 +244,75 @@ export default function ProvidersPage() {
             Current default: <span className="text-matrix-text">{defaultModel}</span>
           </p>
         )}
+      </div>
+
+      {/* Default Ingest Model */}
+      <div className="mb-6 rounded-xl bg-matrix-card p-5">
+        <h2 className="font-semibold mb-3">Default Ingestion Model</h2>
+        <p className="text-sm text-matrix-text-dim mb-3">
+          Model for KB ingestion tasks (titling, analysis). Per-KB overrides take precedence.
+        </p>
+        <div className="flex gap-3">
+          <select
+            value={selectedIngestDefault}
+            onChange={(e) => setSelectedIngestDefault(e.target.value)}
+            className="flex-1 rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+          >
+            <option value="">Same as agent default</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.provider_display_name})
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={saveIngestDefault}
+            disabled={selectedIngestDefault === (defaultIngestModel ?? "")}
+            className="rounded-lg bg-matrix-accent px-4 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+
+      {/* Ingest Limits */}
+      <div className="mb-6 rounded-xl bg-matrix-card p-5">
+        <h2 className="font-semibold mb-3">Ingestion Limits</h2>
+        <p className="text-sm text-matrix-text-dim mb-3">
+          Prevent runaway ingestion from consuming excessive tokens.
+        </p>
+        <div className="flex gap-4 items-end">
+          <div>
+            <label className="block text-xs text-matrix-text-faint mb-1">Max items per ingest</label>
+            <input
+              type="number"
+              min="1"
+              value={editIngestMaxItems}
+              onChange={(e) => setEditIngestMaxItems(e.target.value)}
+              className="w-24 rounded-lg bg-matrix-input px-3 py-2 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-matrix-text-faint mb-1">Max URLs (deep research)</label>
+            <input
+              type="number"
+              min="1"
+              value={editIngestMaxUrls}
+              onChange={(e) => setEditIngestMaxUrls(e.target.value)}
+              className="w-24 rounded-lg bg-matrix-input px-3 py-2 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+            />
+          </div>
+          <button
+            onClick={saveIngestLimits}
+            disabled={
+              parseInt(editIngestMaxItems, 10) === ingestMaxItems &&
+              parseInt(editIngestMaxUrls, 10) === ingestMaxUrls
+            }
+            className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Save
+          </button>
+        </div>
       </div>
 
       {/* Background Chats */}

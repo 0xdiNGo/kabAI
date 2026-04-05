@@ -12,6 +12,7 @@ class AgentCreate(BaseModel):
     fallback_models: list[str] = []
     temperature: float = 0.7
     max_tokens: int = 4096
+    knowledge_base_ids: list[str] = []
     collaboration_capable: bool = False
     collaboration_role: str | None = None
 
@@ -26,6 +27,7 @@ class AgentUpdate(BaseModel):
     fallback_models: list[str] | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    knowledge_base_ids: list[str] | None = None
     collaboration_capable: bool | None = None
     collaboration_role: str | None = None
     is_active: bool | None = None
@@ -39,6 +41,7 @@ class AgentResponse(BaseModel):
     avatar_url: str | None
     specializations: list[str]
     preferred_model: str | None
+    knowledge_base_ids: list[str] = []
     collaboration_capable: bool
     collaboration_role: str | None
     is_active: bool

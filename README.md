@@ -6,6 +6,10 @@ Multi-agent AI chat platform. Users select from configured AI agents (or raw mod
 
 - Multi-agent roundtable discussions with configurable rounds and consensus detection
 - 6 collaboration roles: orchestrator, specialist, critic, synthesizer, researcher, devil's advocate
+- Knowledge bases with ingestion from text, URLs, files, and IETF RFCs
+- Deep research mode — follows related links from ingested pages to pull in connected content
+- Ingest version control and rollback via tracked ingest batches
+- AI Agent Builder — generate full agent profiles from a free-text description
 - Background chat processing — LLM calls continue even when you navigate away
 - Agent import/export archives for sharing agent profiles
 - Bulk model assignment across multiple agents
@@ -67,7 +71,7 @@ See [docs/development.md](docs/development.md) for the full development guide.
 tiger-team/
 ├── backend/
 │   ├── app/
-│   │   ├── api/v1/            # Routers: auth, agents, providers, conversations, settings
+│   │   ├── api/v1/            # Routers: auth, agents, providers, conversations, settings, knowledge
 │   │   ├── core/              # Database, Redis, security, exceptions
 │   │   ├── models/            # Pydantic data models
 │   │   ├── repositories/      # MongoDB data access layer
@@ -76,6 +80,9 @@ tiger-team/
 │   │   │   ├── orchestration/ # Roundtable multi-agent collaboration
 │   │   │   ├── background_manager.py  # Persistent background chat tasks
 │   │   │   ├── llm_service.py         # LLM calls + model resolution
+│   │   │   ├── knowledge_service.py   # Knowledge base CRUD + ingestion logic
+│   │   │   ├── rfc_ingestor.py        # IETF RFC ingestion + lineage mapping
+│   │   │   ├── ingest_manager.py      # Background ingest tasks + status polling
 │   │   │   └── ...
 │   │   ├── config.py          # Environment-based settings
 │   │   ├── dependencies.py    # FastAPI dependency injection wiring
@@ -87,7 +94,7 @@ tiger-team/
 │   └── tests/                 # pytest test suite
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/             # Login, Dashboard, Chat, Agents, Providers
+│   │   ├── pages/             # Login, Dashboard, Chat, Agents, Providers, KnowledgeBasePage
 │   │   ├── stores/            # Zustand state management
 │   │   ├── lib/               # API client, SSE streaming, utilities
 │   │   └── types/             # TypeScript type definitions
@@ -101,7 +108,8 @@ tiger-team/
     ├── development.md         # Development setup guide
     ├── deployment.md          # Demo and production deployment
     ├── runbook.md             # Operational runbook
-    └── api.md                 # API reference
+    ├── api.md                 # API reference
+    └── knowledge-ingestion.md # Knowledge ingestion architecture + diagrams
 ```
 
 ## Documentation
@@ -110,6 +118,7 @@ tiger-team/
 - [Deployment Guide](docs/deployment.md) — Demo on Rancher Desktop, production considerations
 - [Operational Runbook](docs/runbook.md) — Adding providers, managing agents, troubleshooting
 - [API Reference](docs/api.md) — All REST endpoints with examples
+- [Knowledge Ingestion](docs/knowledge-ingestion.md) — Ingestion architecture, RFC handling, deep research mode
 - [CLAUDE.md](CLAUDE.md) — Detailed architecture notes for Claude Code
 
 ## Architecture

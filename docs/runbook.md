@@ -381,7 +381,7 @@ curl -s http://localhost:3000/api/v1/conversations \
   }'
 ```
 
-Or use the UI: Dashboard → toggle **Roundtable** → select 2+ agents → **Start Roundtable**.
+Or use the UI: Dashboard → toggle **Roundtable** → select 2+ agents → **Start Roundtable**. The Dashboard also provides a **Knowledge Bases** page (accessible from the sidebar) for managing knowledge bases, ingesting content, and assigning KBs to agents through the UI.
 
 ### Configure roundtable rounds
 
@@ -421,6 +421,235 @@ Skips agents whose slug already exists. The repo includes a default archive at `
 ### Import default agents via UI
 
 Manage Agents → **Import** → select `backend/agents/default-agents.json`.
+
+---
+
+## Knowledge Base Management
+
+Knowledge bases (KBs) store chunked reference content that agents can search during conversations. All KB management endpoints require admin access except read-only operations (list, get, search, items, batches, sources, ingest-status).
+
+### Creating a knowledge base
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "Network Standards",
+    "description": "IETF RFCs and networking best practices",
+    "ingest_model": "openai/gpt-4o"
+  }'
+```
+
+Returns `{"id": "KB_ID"}`. The `ingest_model` is optional -- if omitted, the system-wide default ingest model is used (see "Setting default ingest model" below). This model is used to generate titles and summaries during ingestion.
+
+### Ingesting text content
+
+Paste or pipe text directly into a knowledge base:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "content": "Your text content here. Can be multiple paragraphs, documentation, etc.",
+    "source": "internal-docs/architecture.md"
+  }'
+```
+
+Returns `{"status": "started", "kb_id": "KB_ID"}`. Ingestion runs in the background -- the content is chunked and stored as searchable items. The `source` field is optional but recommended for tracking provenance and enabling bulk deletion later.
+
+### Ingesting from URL
+
+Fetch and ingest content from a URL:
+
+```bash
+# Simple single-page fetch
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-url \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "url": "https://example.com/docs/getting-started",
+    "deep": false
+  }'
+
+# Deep research -- follows links and ingests related pages
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-url \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "url": "https://example.com/docs",
+    "deep": true
+  }'
+```
+
+Set `deep: true` to crawl linked pages from the initial URL. This is useful for documentation sites. The number of URLs followed is bounded by the `ingest_max_urls` setting.
+
+### Ingesting IETF RFCs
+
+RFCs are a common use case. The URL ingest handles plain-text RFC format automatically:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-url \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "url": "https://www.rfc-editor.org/rfc/rfc9293.txt",
+    "deep": false
+  }'
+```
+
+The ingested items will have `source` set to the RFC URL. Each ingest creates a batch, so you can see lineage (which items came from which ingest) via the batches endpoint. Subsequent ingests of the same RFC create new batches, letting you roll back if needed.
+
+### Checking ingest status
+
+Ingestion runs asynchronously. Poll for progress:
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-status \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+Response fields:
+- `state` -- `"idle"`, `"running"`, or `"completed"`
+- `current_step` -- human-readable progress message
+- `items_created` -- number of chunks stored so far
+- `urls_processed` -- number of URLs fetched (for URL ingests)
+- `error` -- error message if the ingest failed
+- `result` -- final summary (only when `state` is `"completed"`)
+
+### Assigning KBs to agents
+
+Attach one or more knowledge bases to an agent so it can search them during conversations:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/agents/devops-engineer \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"knowledge_base_ids": ["KB_ID_1", "KB_ID_2"]}'
+```
+
+The agent will automatically search its assigned KBs for relevant context when answering questions. To remove all KBs, pass an empty list: `{"knowledge_base_ids": []}`.
+
+### Searching within a KB
+
+Run a text search against a specific knowledge base:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "TCP three-way handshake", "limit": 10}'
+```
+
+Returns a list of matching items with `id`, `title`, `content`, `source`, and `chunk_index`. The `limit` parameter defaults to 20.
+
+### Viewing ingest history
+
+List all ingest batches for a knowledge base to see what was ingested and when:
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases/KB_ID/batches \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+Each batch includes `id`, `source`, `item_count`, and `created_at`. Use this to audit ingestion lineage or identify a batch for rollback.
+
+### Rolling back a bad ingest
+
+Delete all items from a specific ingest batch:
+
+```bash
+curl -s -X DELETE http://localhost:3000/api/v1/knowledge-bases/KB_ID/batches/BATCH_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns `{"items_deleted": N}`. The KB item count is automatically updated. This is useful when an ingest produced bad chunks or you ingested the wrong content.
+
+### Bulk deleting by source
+
+Delete all items that share a specific `source` value:
+
+```bash
+# List sources first to see what's available
+curl -s http://localhost:3000/api/v1/knowledge-bases/KB_ID/sources \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+# Delete all items from a specific source
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/delete-by-source \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"source": "https://www.rfc-editor.org/rfc/rfc9293.txt"}'
+```
+
+Returns `{"items_deleted": N}`. This is broader than batch rollback -- it removes items across all batches that share the same source.
+
+### Exporting/importing KBs
+
+Export a knowledge base (metadata + all items) to JSON:
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases/KB_ID/export \
+  -H "Authorization: Bearer $TOKEN" > kb-backup.json
+```
+
+Import a knowledge base from a previously exported JSON file:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/import \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d @kb-backup.json
+```
+
+Returns `{"id": "NEW_KB_ID", "items_created": N}`. This creates a new KB -- it does not merge into an existing one.
+
+Note: Agent import/export (see above) also bundles associated knowledge bases automatically. Use the standalone KB export/import when you want to move a KB independently of any agent.
+
+### Configuring ingest limits
+
+Control how much content a single ingest operation can process:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "ingest_max_items": 500,
+    "ingest_max_urls": 50
+  }'
+```
+
+- `ingest_max_items` -- maximum number of chunks a single ingest can create
+- `ingest_max_urls` -- maximum number of URLs to follow during a `deep: true` URL ingest
+
+### Setting default ingest model
+
+Set the system-wide default model used for ingestion (title/summary generation) when a KB does not specify its own `ingest_model`:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"default_ingest_model": "openai/gpt-4o-mini"}'
+```
+
+Individual KBs can override this via their `ingest_model` field (set during creation or via PUT on the KB).
+
+### AI Agent Builder
+
+Automatically generate an agent configuration from a natural-language description:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/agents/build \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "description": "A Kubernetes troubleshooting expert that helps diagnose pod crashes, networking issues, and resource limits. Should be cautious and always suggest checking logs first."
+  }'
+```
+
+The builder uses an LLM to generate a complete agent definition (name, slug, system prompt, specializations, temperature, etc.) from your description. Review the output and create the agent via `POST /api/v1/agents` or use the UI to refine it further.
 
 ---
 
