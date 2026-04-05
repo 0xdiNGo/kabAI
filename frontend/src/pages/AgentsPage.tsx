@@ -6,6 +6,7 @@ import type { ModelInfo } from "@/types/provider";
 
 interface KB { id: string; name: string; description: string; item_count: number; }
 interface ES { id: string; name: string; description: string; pair_count: number; }
+interface SP { id: string; name: string; display_name: string; is_enabled: boolean; }
 
 interface AgentForm {
   name: string;
@@ -20,6 +21,7 @@ interface AgentForm {
   max_tokens: string;
   knowledge_base_ids: string[];
   exemplar_set_ids: string[];
+  search_provider_ids: string[];
   collaboration_capable: boolean;
   collaboration_role: string;
 }
@@ -37,6 +39,7 @@ const emptyForm: AgentForm = {
   max_tokens: "4096",
   knowledge_base_ids: [],
   exemplar_set_ids: [],
+  search_provider_ids: [],
   collaboration_capable: false,
   collaboration_role: "",
 };
@@ -53,6 +56,7 @@ function agentToForm(agent: Agent & { system_prompt?: string; fallback_models?: 
     fallback_models: (agent.fallback_models ?? []).join(", "),
     knowledge_base_ids: agent.knowledge_base_ids ?? [],
     exemplar_set_ids: agent.exemplar_set_ids ?? [],
+    search_provider_ids: agent.search_provider_ids ?? [],
     temperature: String(agent.temperature ?? 0.7),
     max_tokens: String(agent.max_tokens ?? 4096),
     collaboration_capable: agent.collaboration_capable,
@@ -72,6 +76,7 @@ export default function AgentsPage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [availableKBs, setAvailableKBs] = useState<KB[]>([]);
   const [availableES, setAvailableES] = useState<ES[]>([]);
+  const [availableSP, setAvailableSP] = useState<SP[]>([]);
   const [form, setForm] = useState<AgentForm>(emptyForm);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -106,6 +111,7 @@ export default function AgentsPage() {
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
     api.get<KB[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
     api.get<ES[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
+    api.get<SP[]>("/search-providers").then(setAvailableSP).catch(() => {});
 
     // Auto-open edit if ?edit=slug is in URL
     const editSlug = searchParams.get("edit");
@@ -160,6 +166,7 @@ export default function AgentsPage() {
         max_tokens: parseInt(form.max_tokens, 10) || 4096,
         knowledge_base_ids: form.knowledge_base_ids,
         exemplar_set_ids: form.exemplar_set_ids,
+        search_provider_ids: form.search_provider_ids,
         collaboration_capable: form.collaboration_capable,
         collaboration_role: form.collaboration_role || null,
       };
@@ -246,6 +253,7 @@ export default function AgentsPage() {
       max_tokens: String(builderResult.max_tokens ?? 4096),
       knowledge_base_ids: [],
       exemplar_set_ids: [],
+      search_provider_ids: [],
       collaboration_capable: true,
       collaboration_role: (builderResult.collaboration_role as string) || "specialist",
     });
@@ -925,6 +933,26 @@ export default function AgentsPage() {
                                   className="h-3.5 w-3.5 rounded accent-matrix-accent" />
                                 <span className="text-sm text-matrix-text">{es.name}</span>
                                 <span className="text-xs text-matrix-text-faint">({es.pair_count})</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Search Providers</label>
+                        <div className="space-y-1 rounded-lg bg-matrix-input p-2 max-h-32 overflow-y-auto">
+                          {availableSP.length === 0 ? (
+                            <p className="text-xs text-matrix-text-faint px-2 py-1">No search providers available</p>
+                          ) : (
+                            availableSP.map((sp) => (
+                              <label key={sp.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-matrix-hover cursor-pointer">
+                                <input type="checkbox" checked={form.search_provider_ids.includes(sp.id)}
+                                  onChange={(e) => {
+                                    const ids = e.target.checked ? [...form.search_provider_ids, sp.id] : form.search_provider_ids.filter((id) => id !== sp.id);
+                                    setForm({ ...form, search_provider_ids: ids });
+                                  }}
+                                  className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                                <span className="text-sm text-matrix-text">{sp.display_name}</span>
                               </label>
                             ))
                           )}

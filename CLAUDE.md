@@ -109,7 +109,7 @@ Roundtable mode: multiple agents discuss a topic across configurable rounds (def
 
 Models: `KnowledgeBase`, `KnowledgeItem`, `IngestBatch` (in `models/`). Repository in `repositories/`, service in `services/knowledge_service.py`, API router in `api/v1/knowledge.py` (registered in `api/v1/router.py`).
 
-**Ingestion** supports text, URL, and file sources. Content is chunked and each chunk gets an LLM-generated title. See [docs/knowledge-ingestion.md](docs/knowledge-ingestion.md) for detailed diagrams.
+**Ingestion** supports text, URL, and file sources. Content is chunked and enqueued to a persistent MongoDB queue (`ingest_queue` collection). The `IngestWorker` (started at app boot) polls for pending items and processes them — scripted titles by default (first-line extraction, instant, no LLM cost) or AI-generated titles (opt-in via `ai_titles` flag). See [docs/knowledge-ingestion.md](docs/knowledge-ingestion.md) for detailed diagrams.
 
 **RFC-aware ingestion** (`services/rfc_ingestor.py`): integrates with the IETF datatracker to pull RFCs, map lineage (obsoletes/updates chains), and analyze changes between versions.
 
@@ -117,11 +117,40 @@ Models: `KnowledgeBase`, `KnowledgeItem`, `IngestBatch` (in `models/`). Reposito
 
 **Ingest model resolution**: KB-level override → system ingest default → system agent default. This allows each knowledge base to specify which model handles title generation and summarization.
 
-**IngestManager** (`services/ingest_manager.py`): runs ingestion as background tasks with status polling so the UI can track progress. Respects configurable limits: `max_items` (per batch) and `max_urls` (per URL crawl).
+**IngestManager** (`services/ingest_manager.py`): enqueues chunks into the persistent ingest queue and starts background crawl/chunking tasks with status polling so the UI can track progress. Respects configurable limits: `max_items` (per batch) and `max_urls` (per URL crawl).
+
+**Persistent Ingest Queue**: `IngestQueueItem` model in `models/ingest_queue.py`, repository in `repositories/ingest_queue_repo.py`. Each chunk is a queue document with state (`pending` | `processing` | `done` | `failed`). The `IngestWorker` (`services/ingest_worker.py`) runs as a long-lived asyncio task started at app boot. It claims pending items, generates titles (scripted or AI), persists `KnowledgeItem`s, and auto-purges completed jobs. Crash-safe: on startup, stale `processing` items are reset to `pending`.
+
+### Agent Model
+
+The `Agent` model (`models/agent.py`) includes:
+- **`tags`**: Free-form string list replacing the old categories system. Used for filtering and grouping agents in the UI.
+- **`search_provider_ids`**: Per-agent assignment of search providers. When an agent has search providers assigned, it can use web search during conversations via tool use. Falls back to the system default search provider if none assigned.
+- **`exemplar_set_ids`**: Links to exemplar sets for few-shot prompting.
+- **`knowledge_base_ids`**: Links to knowledge bases for RAG context injection.
 
 ### AI Agent Builder
 
 `POST /agents/build` generates full agent profiles (name, system prompt, collaboration role, etc.) from a free-text description. Uses an LLM call to produce a ready-to-save agent configuration.
+
+### Web Search via Tool Use
+
+Agents with search providers can perform web searches during conversations. Implemented via LLM function calling (tool use):
+
+1. `llm_service.py` defines a `web_search` tool (JSON function schema) and passes it to `litellm.acompletion()`
+2. If the LLM requests a `web_search` tool call, the agentic loop executes it via `SearchService`
+3. `SearchService` (`services/search_service.py`) dispatches to the appropriate search backend (Kagi, Google Custom Search, Bing, Brave, DuckDuckGo, SearXNG)
+4. Results are formatted and injected as a tool response, then the LLM generates the final answer with search context
+
+Provider resolution: agent's `search_provider_ids` (first enabled) -> system default search provider.
+
+### Search Providers
+
+`SearchProvider` model in `models/search_provider.py`. Repository in `repositories/search_provider_repo.py`. API router at `api/v1/search.py` (prefix `/search-providers`). Supports Kagi, Google, Bing, Brave, DuckDuckGo, and SearXNG (self-hosted). API keys are stored encrypted. Each provider can be enabled/disabled and one can be set as the system default.
+
+### Exemplar Sets
+
+`ExemplarSet` and `ExemplarPair` models in `models/exemplar.py`. Repository in `repositories/exemplar_repo.py`. Service in `services/exemplar_service.py`. API router at `api/v1/exemplars.py` (prefix `/exemplar-sets`). Exemplar sets contain user/assistant message pairs used for few-shot prompting. Sets can be imported from HuggingFace datasets (e.g., `source_dataset` field). Agents link to exemplar sets via `exemplar_set_ids`.
 
 ### Frontend (`frontend/src/`)
 
@@ -130,11 +159,11 @@ Models: `KnowledgeBase`, `KnowledgeItem`, `IngestBatch` (in `models/`). Reposito
 - **SSE Streaming**: `lib/sse.ts` — POST-based SSE via fetch + ReadableStream (not EventSource)
 - **API Client**: `lib/api.ts` — typed fetch wrapper with JWT auth headers
 - **Theme**: Gruvbox dark palette defined in `tailwind.config.ts` under `colors.matrix.*`
-- **Pages**: Login, Dashboard, Chat, Agents (admin), Providers (admin + settings), KnowledgeBasePage
+- **Pages**: Login, Dashboard, Chat, Agents (admin), Providers (admin + settings), KnowledgeBasePage, SearchProvidersPage (admin)
 
 ### MongoDB Collections
 
-`users`, `agents`, `conversations` (messages embedded), `providers`, `settings`, `knowledge_bases`, `knowledge_items`, `ingest_batches`
+`users`, `agents`, `conversations` (messages embedded), `providers`, `settings`, `knowledge_bases`, `knowledge_items`, `ingest_batches`, `search_providers`, `ingest_queue`, `exemplar_sets`, `exemplar_pairs`
 
 ### REST API
 
@@ -144,9 +173,11 @@ All endpoints under `/api/v1`:
 - **Providers**: CRUD + model enumeration + test connectivity
 - **Conversations**: CRUD + streaming (with background task support) + status + event reconnection
 - **Settings**: get/update system settings (default model, max background chats, roundtable rounds)
-- **Knowledge Bases**: CRUD + ingestion (text/URL/file/RFC) + batch status + items listing
+- **Knowledge Bases**: CRUD + ingestion (text/URL/file/RFC) + batch status + items listing + queue status
+- **Search Providers**: CRUD + set-default + test connectivity
+- **Exemplar Sets**: CRUD + pair management + HuggingFace import
 
-Auth required on all except register/login. Admin role required for provider/agent/settings management.
+Auth required on all except register/login. Admin role required for provider/agent/settings/search-provider management.
 
 ### Agent Archives
 

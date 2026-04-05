@@ -126,27 +126,45 @@ Get the current authenticated user's profile.
 
 ### GET /agents
 
-List all active agents.
+List active agents with pagination, tag filtering, search, and sorting.
 
 **Auth required:** Yes
 
+**Query parameters:**
+
+| Param    | Type   | Default  | Notes                                    |
+|----------|--------|----------|------------------------------------------|
+| `tag`    | string | none     | Filter by tag (e.g., `default-dashboard`) |
+| `search` | string | none    | Search name, description, specializations |
+| `sort`   | string | newest   | `newest`, `oldest`, `name`               |
+| `limit`  | int    | 50       | Max results                              |
+| `offset` | int    | 0        | Pagination skip                          |
+
 **Response (200):**
 ```json
+{
+  "agents": [
 [
   {
     "id": "507f1f77bcf86cd799439011",
     "name": "Code Architect",
     "slug": "code-architect",
     "description": "Expert in software design patterns...",
+    "tags": ["default-agent", "default-dashboard"],
     "avatar_url": null,
     "specializations": ["architecture", "code-review"],
     "preferred_model": "openai/gpt-4o",
     "knowledge_base_ids": [],
+    "exemplar_set_ids": [],
+    "search_provider_ids": [],
     "collaboration_capable": true,
     "collaboration_role": "specialist",
     "is_active": true
   }
-]
+  ],
+  "total": 21,
+  "all_tags": ["default-agent", "default-dashboard"]
+}
 ```
 
 ---
@@ -198,7 +216,10 @@ Create a new agent.
 | `fallback_models`       | string[] | no       | []      | Tried in order if preferred fails  |
 | `temperature`           | float    | no       | 0.7     | 0.0 to 1.0                        |
 | `max_tokens`            | int      | no       | 4096    |                                    |
+| `tags`                  | string[] | no       | []      | Agent tags for filtering           |
 | `knowledge_base_ids`    | string[] | no       | []      | IDs of linked knowledge bases      |
+| `exemplar_set_ids`      | string[] | no       | []      | IDs of linked exemplar sets        |
+| `search_provider_ids`   | string[] | no       | []      | IDs of assigned search providers   |
 | `collaboration_capable` | bool     | no       | false   |                                    |
 | `collaboration_role`    | string   | no       | null    | One of: `orchestrator`, `specialist`, `critic`, `synthesizer`, `researcher`, `devil_advocate` |
 
@@ -1226,6 +1247,40 @@ Each item in the `items` array:
   "items_created": 42
 }
 ```
+
+---
+
+## Exemplar Sets
+
+Exemplar sets store conversation pairs (user/assistant) that get injected as few-shot examples at query time.
+
+### GET /exemplar-sets — List all sets
+### POST /exemplar-sets — Create a set (`{ name, description, source_dataset? }`)
+### GET /exemplar-sets/{id} — Get set detail
+### PUT /exemplar-sets/{id} — Update set
+### DELETE /exemplar-sets/{id} — Delete set and all pairs
+### POST /exemplar-sets/{id}/pairs — Add a pair (`{ user_content, assistant_content, topic_tags? }`)
+### GET /exemplar-sets/{id}/pairs — List pairs
+### DELETE /exemplar-sets/{id}/pairs/{pair_id} — Delete a pair
+### POST /exemplar-sets/{id}/import-hf — Import from HF dataset (`{ repo_id, subset?, split?, max_pairs? }`)
+### GET /exemplar-sets/{id}/export — Export set as JSON
+### POST /exemplar-sets/import — Import from archive
+
+---
+
+## Search Providers
+
+Configure web search engines for agent tool use. Agents with assigned search providers can invoke web search during conversations via LLM function calling.
+
+### GET /search-providers — List all providers
+### POST /search-providers — Create (`{ name, display_name, api_key?, api_base?, custom_params?, is_enabled? }`)
+
+Supported `name` values: `kagi`, `google`, `bing`, `brave`, `duckduckgo`, `searxng`
+
+### PUT /search-providers/{id} — Update provider
+### POST /search-providers/{id}/set-default — Set as default search provider
+### DELETE /search-providers/{id} — Delete provider
+### POST /search-providers/test — Test the default provider with a sample query
 
 ---
 

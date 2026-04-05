@@ -541,11 +541,15 @@ export default function KnowledgeBasePage() {
 
                           {/* Chunk size selector */}
                           <div className="space-y-1">
-                            <p className="text-xs text-matrix-text-dim mb-2">Select chunk size — each chunk costs one LLM call for title generation:</p>
+                            <p className="text-xs text-matrix-text-dim mb-2">
+                              {aiTitles
+                                ? "Select chunk size — each chunk costs one LLM call for title generation:"
+                                : "Select chunk size — smaller chunks improve retrieval accuracy, larger chunks preserve more context:"}
+                            </p>
                             {sizes.map((sz) => {
                               const chunks = Math.max(1, Math.ceil(charCount / sz.target));
                               const titleTokens = aiTitles ? chunks * 550 : 0;
-                              const totalTokens = tokEstimate + titleTokens;
+                              const displayTokens = aiTitles ? tokEstimate + titleTokens : tokEstimate;
                               const selected = chunkSize === sz.key;
                               const suggested = a?.suggested_chunk_size === sz.key;
                               return (
@@ -566,9 +570,15 @@ export default function KnowledgeBasePage() {
                                     <span className={`text-sm ${selected ? "text-matrix-accent" : "text-matrix-text-dim"}`}>
                                       {chunks} chunk{chunks !== 1 ? "s" : ""}
                                     </span>
-                                    <span className="text-xs text-matrix-text-faint ml-2">
-                                      ~{totalTokens.toLocaleString()} tok
-                                    </span>
+                                    {aiTitles ? (
+                                      <span className="text-xs text-matrix-text-faint ml-2">
+                                        ~{displayTokens.toLocaleString()} tok total
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-matrix-text-faint ml-2">
+                                        ~{displayTokens.toLocaleString()} tok content
+                                      </span>
+                                    )}
                                   </div>
                                 </button>
                               );
@@ -580,7 +590,7 @@ export default function KnowledgeBasePage() {
                               <input type="checkbox" checked={aiTitles} onChange={(e) => setAiTitles(e.target.checked)}
                                 className="h-3.5 w-3.5 rounded accent-matrix-accent" />
                               <span className="text-xs text-matrix-text-dim">AI titles</span>
-                              <span className="text-xs text-matrix-text-faint">(slower, uses LLM tokens)</span>
+                              <span className="text-xs text-matrix-text-faint">{aiTitles ? "(LLM-generated, uses tokens)" : "(off — scripted titles, no LLM cost)"}</span>
                             </label>
                             <button onClick={ingestStagedFile} disabled={ingesting}
                               className="rounded-lg bg-matrix-accent px-6 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">

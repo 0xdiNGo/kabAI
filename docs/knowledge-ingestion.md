@@ -46,7 +46,9 @@ flowchart TD
 
 ### Text Ingestion Pipeline
 
-This is the core pipeline that all content flows through regardless of source.
+This is the core pipeline that all content flows through regardless of source. Chunks are enqueued to a persistent MongoDB queue (`ingest_queue` collection) rather than processed inline. The `IngestWorker` processes queued items in the background.
+
+**Title generation** is scripted by default: the first meaningful line of each chunk is extracted as the title (instant, no LLM cost). AI-generated titles are opt-in via the `ai_titles` flag, which uses an LLM call per chunk.
 
 ```mermaid
 flowchart TD
@@ -57,29 +59,36 @@ flowchart TD
     D -->|At item limit| E[Stop - Return count]
     D -->|Under limit| F[Trim chunks to remaining limit]
     
-    F --> G[For each chunk]
-    G --> H[Resolve Ingest Model]
-    H --> I{KB has ingest_model?}
-    I -->|Yes + available| J[Use KB model]
-    I -->|No| K{System ingest default set?}
-    K -->|Yes + available| L[Use system ingest default]
-    K -->|No| M[Use system agent default]
+    F --> G[Enqueue chunks to<br/>ingest_queue collection]
+    G --> H[Return job_id to caller]
     
-    J --> N[LLM: Generate title]
-    L --> N
-    M --> N
+    H --> I[IngestWorker picks up<br/>pending items]
+    I --> J{ai_titles enabled?}
+    J -->|Yes| K[Resolve Ingest Model]
+    J -->|No| L[Scripted title:<br/>first line extraction]
     
-    N --> O[Create KnowledgeItem<br/>with batch_id]
-    O --> P{More chunks?}
-    P -->|Yes| G
-    P -->|No| Q[Bulk insert items to MongoDB]
-    Q --> R[Update batch item count]
-    R --> S[Update KB item count]
-    S --> T[Return items_created]
+    K --> M{KB has ingest_model?}
+    M -->|Yes + available| N[Use KB model]
+    M -->|No| O{System ingest default set?}
+    O -->|Yes + available| P[Use system ingest default]
+    O -->|No| Q[Use system agent default]
+    
+    N --> R[LLM: Generate title]
+    P --> R
+    Q --> R
+    
+    R --> S[Create KnowledgeItem<br/>with batch_id]
+    L --> S
+    S --> T[Mark queue item done]
+    T --> U[Update KB item count]
+    U --> V{Job complete?}
+    V -->|Yes| W[Purge done items<br/>for this job]
+    V -->|No| I
 
     style B fill:#458588,color:#1d2021
-    style N fill:#d65d0e,color:#1d2021
-    style Q fill:#98971a,color:#1d2021
+    style R fill:#d65d0e,color:#1d2021
+    style L fill:#98971a,color:#1d2021
+    style G fill:#458588,color:#1d2021
 ```
 
 ### Chunking Strategy
@@ -253,43 +262,54 @@ flowchart TD
 
 ## Background Processing
 
+Ingestion uses two layers: `IngestManager` handles chunking and enqueuing, while `IngestWorker` processes the persistent queue.
+
 ```mermaid
 sequenceDiagram
     participant UI as Frontend
     participant API as API Endpoint
     participant IM as IngestManager
     participant KS as KnowledgeService
+    participant Q as ingest_queue (MongoDB)
+    participant IW as IngestWorker
     participant LLM as LLM Provider
-    participant DB as MongoDB
+    participant DB as MongoDB (items)
 
     UI->>API: POST /ingest or /ingest-url
     API->>IM: start_ingest(kb_id, coro)
     IM-->>API: IngestStatus created
     API-->>UI: {"status": "started"}
     
-    Note over IM,DB: Background task runs independently
+    Note over IM,Q: IngestManager chunks content and enqueues
     
     IM->>KS: run ingestion coroutine
-    KS->>LLM: generate titles
-    KS->>DB: store items
+    KS->>Q: enqueue IngestQueueItems (state=pending)
     KS->>IM: update status.current_step
     
-    loop Every 2 seconds
-        UI->>API: GET /ingest-status
-        API->>IM: get_status(kb_id)
-        IM-->>API: {state, current_step, ...}
-        API-->>UI: status update
+    Note over IW,DB: IngestWorker runs continuously (started at app boot)
+    
+    loop Poll every 2s when idle
+        IW->>Q: claim_next_pending (atomic state=processing)
+        Q-->>IW: IngestQueueItem
+        alt ai_titles=true
+            IW->>LLM: generate title
+        else scripted (default)
+            IW->>IW: extract first line as title
+        end
+        IW->>DB: create KnowledgeItem
+        IW->>Q: mark_done
+    end
+    
+    loop UI polls every 2 seconds
+        UI->>API: GET /queue-status
+        API->>Q: aggregate counts
+        API-->>UI: {pending, processing, done, failed, total}
     end
     
     Note over UI: User can navigate away
-    Note over IM,DB: Task continues running
+    Note over IW,DB: Worker continues processing queue
     
-    KS-->>IM: coroutine completes
-    IM->>IM: state = "completed"
-    
-    Note over UI: User returns
-    UI->>API: GET /ingest-status
-    API-->>UI: {state: "completed", result: {...}}
+    Note over IW: On crash/restart: stale processing items reset to pending
 ```
 
 ## Version Control (Batches)

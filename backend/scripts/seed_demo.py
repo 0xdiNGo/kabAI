@@ -50,6 +50,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Bertram Gilfoyle",
@@ -72,6 +73,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Dinesh Chugtai",
@@ -94,6 +96,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Jared Dunn",
@@ -117,6 +120,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Erlich Bachman",
@@ -140,6 +144,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "orchestrator",
+        "tags": [],
     },
     {
         "name": "Monica Hall",
@@ -161,6 +166,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Gavin Belson",
@@ -183,6 +189,7 @@ AGENTS = [
         "max_tokens": 4096,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
     {
         "name": "Big Head",
@@ -205,6 +212,7 @@ AGENTS = [
         "max_tokens": 2048,
         "collaboration_capable": True,
         "collaboration_role": "specialist",
+        "tags": [],
     },
 ]
 

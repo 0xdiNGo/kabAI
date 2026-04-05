@@ -96,6 +96,9 @@ class AgentArchiveEntry(BaseModel):
     knowledge_base_names: list[str] = []  # KB names for export/import mapping
     collaboration_capable: bool = False
     collaboration_role: str | None = None
+    tags: list[str] = []
+    exemplar_set_ids: list[str] = []
+    search_provider_ids: list[str] = []
 
 
 class KBArchiveItem(BaseModel):
@@ -169,6 +172,9 @@ async def export_agents(
             knowledge_base_names=[kb_id_to_name[kid] for kid in a.knowledge_base_ids if kid in kb_id_to_name],
             collaboration_capable=a.collaboration_capable,
             collaboration_role=a.collaboration_role,
+            tags=a.tags,
+            exemplar_set_ids=a.exemplar_set_ids,
+            search_provider_ids=a.search_provider_ids,
         )
         for a in agents
     ]
@@ -266,6 +272,7 @@ The JSON must have exactly these fields:
   "slug": "url-safe-slug",
   "description": "One-line description for card display",
   "system_prompt": "Detailed personality and behavior instructions (2-4 sentences)",
+  "tags": ["tag1"],
   "specializations": ["tag1", "tag2", "tag3"],
   "temperature": 0.7,
   "max_tokens": 4096,
@@ -321,6 +328,7 @@ async def build_agent(
     profile.setdefault("slug", "new-agent")
     profile.setdefault("description", "")
     profile.setdefault("system_prompt", "")
+    profile.setdefault("tags", [])
     profile.setdefault("specializations", [])
     profile.setdefault("temperature", 0.7)
     profile.setdefault("max_tokens", 4096)

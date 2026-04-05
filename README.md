@@ -12,6 +12,11 @@ Multi-agent AI chat platform. Users select from configured AI agents (or raw mod
 - AI Agent Builder — generate full agent profiles from a free-text description
 - Background chat processing — LLM calls continue even when you navigate away
 - Agent import/export archives for sharing agent profiles
+- Web search via tool use — Kagi, Google, Bing, Brave, DuckDuckGo, SearXNG (per-agent or system default)
+- Agent tags for filtering and grouping (replaced categories)
+- Persistent ingest queue with crash recovery (stale items reset on startup)
+- Scripted titles by default (first-line extraction, instant, free); AI titles opt-in
+- Exemplar sets for few-shot prompting (HuggingFace dataset import)
 - Bulk model assignment across multiple agents
 - System default model with automatic fallback chain
 - Real-time SSE streaming with thinking indicators
@@ -94,7 +99,7 @@ tiger-team/
 │   └── tests/                 # pytest test suite
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/             # Login, Dashboard, Chat, Agents, Providers, KnowledgeBasePage
+│   │   ├── pages/             # Login, Dashboard, Chat, Agents, Providers, KnowledgeBasePage, SearchProvidersPage
 │   │   ├── stores/            # Zustand state management
 │   │   ├── lib/               # API client, SSE streaming, utilities
 │   │   └── types/             # TypeScript type definitions
