@@ -145,7 +145,16 @@ export default function KnowledgeBasePage() {
   };
 
   const loadKBs = () => { api.get<KB[]>("/knowledge-bases").then(setKbs).catch(() => {}); };
-  const loadItems = async (kb: KB) => { setItems(await api.get<KBItem[]>(`/knowledge-bases/${kb.id}/items`)); };
+  const [itemPage, setItemPage] = useState(0);
+  const ITEMS_PER_PAGE = 100;
+  const [itemTotal, setItemTotal] = useState(0);
+  const loadItems = async (kb: KB, page = 0) => {
+    const offset = page * ITEMS_PER_PAGE;
+    const fetched = await api.get<KBItem[]>(`/knowledge-bases/${kb.id}/items?limit=${ITEMS_PER_PAGE}&offset=${offset}`);
+    setItems(fetched);
+    setItemPage(page);
+    setItemTotal(kb.item_count);
+  };
   const loadBatches = async (kbId: string) => { setBatches(await api.get<Batch[]>(`/knowledge-bases/${kbId}/batches`)); };
   const loadSources = async (kbId: string) => { setSources(await api.get<{ source: string | null; count: number }[]>(`/knowledge-bases/${kbId}/sources`)); };
 
@@ -163,7 +172,7 @@ export default function KnowledgeBasePage() {
     // Stop any active polling and clear all ingest state
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
-    setStagedFile(null); setAnalysis(null); setIngestStatus(null);
+    setStagedFile(null); setAnalysis(null); setIngestStatus(null); setItemPage(0);
     await Promise.all([loadItems(kb), loadBatches(kb.id), loadSources(kb.id)]);
 
     // Check for active ingestion via fast global endpoint + per-KB task status
@@ -486,6 +495,30 @@ export default function KnowledgeBasePage() {
                       </div>
                     ))}
                   </div>
+                  {/* Pagination */}
+                  {!searchResults && itemTotal > ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-matrix-input">
+                      <span className="text-xs text-matrix-text-faint">
+                        {itemPage * ITEMS_PER_PAGE + 1}–{Math.min((itemPage + 1) * ITEMS_PER_PAGE, itemTotal)} of {itemTotal.toLocaleString()} items
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => selectedKB && loadItems(selectedKB, itemPage - 1)}
+                          disabled={itemPage === 0}
+                          className="rounded bg-matrix-input px-3 py-1 text-xs text-matrix-text hover:bg-matrix-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Prev
+                        </button>
+                        <button
+                          onClick={() => selectedKB && loadItems(selectedKB, itemPage + 1)}
+                          disabled={(itemPage + 1) * ITEMS_PER_PAGE >= itemTotal}
+                          className="rounded bg-matrix-input px-3 py-1 text-xs text-matrix-text hover:bg-matrix-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
