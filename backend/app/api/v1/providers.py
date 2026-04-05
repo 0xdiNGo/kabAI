@@ -1,8 +1,20 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.dependencies import get_current_user, get_provider_service, require_admin
 from app.schemas.provider import ModelInfo, ProviderCreate, ProviderResponse, ProviderUpdate
 from app.services.provider_service import ProviderService
+
+
+class OllamaModelCreateRequest(BaseModel):
+    model_name: str
+    base_model: str
+    adapter_path: str
+    system_prompt: str | None = None
+
+
+class OllamaModelDeleteRequest(BaseModel):
+    model_name: str
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -89,3 +101,29 @@ async def test_provider(
     svc: ProviderService = Depends(get_provider_service),
 ):
     return await svc.test_provider(provider_id)
+
+
+@router.post("/{provider_id}/ollama/create-model", response_model=dict)
+async def create_ollama_model(
+    provider_id: str,
+    body: OllamaModelCreateRequest,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    return await svc.create_ollama_model(
+        provider_id,
+        model_name=body.model_name,
+        base_model=body.base_model,
+        adapter_path=body.adapter_path,
+        system_prompt=body.system_prompt,
+    )
+
+
+@router.post("/{provider_id}/ollama/delete-model", response_model=dict)
+async def delete_ollama_model(
+    provider_id: str,
+    body: OllamaModelDeleteRequest,
+    _admin=Depends(require_admin),
+    svc: ProviderService = Depends(get_provider_service),
+):
+    return await svc.delete_ollama_model(provider_id, body.model_name)

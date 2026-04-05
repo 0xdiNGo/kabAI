@@ -168,3 +168,52 @@ class ProviderService:
             return {"status": "ok", "model_count": len(models)}
         except Exception as e:
             return {"status": "error", "detail": str(e)}
+
+    # --- Ollama Model Management ---
+
+    async def create_ollama_model(
+        self,
+        provider_id: str,
+        model_name: str,
+        base_model: str,
+        adapter_path: str,
+        system_prompt: str | None = None,
+    ) -> dict:
+        """Create an Ollama model with a LoRA adapter via Modelfile."""
+        provider = await self.get_provider(provider_id)
+        if provider.provider_type != "ollama":
+            raise ConflictError("Only Ollama providers support model creation")
+
+        base = provider.api_base or "http://localhost:11434"
+        modelfile = f"FROM {base_model}\nADAPTER {adapter_path}"
+        if system_prompt:
+            # Escape quotes in system prompt
+            escaped = system_prompt.replace('"', '\\"')
+            modelfile += f'\nSYSTEM "{escaped}"'
+
+        async with httpx.AsyncClient(timeout=300, follow_redirects=True) as client:
+            resp = await client.post(
+                f"{base}/api/create",
+                json={"name": model_name, "modelfile": modelfile, "stream": False},
+            )
+            resp.raise_for_status()
+
+        return {"model_id": f"ollama/{model_name}", "status": "created"}
+
+    async def delete_ollama_model(self, provider_id: str, model_name: str) -> dict:
+        """Delete an Ollama model."""
+        provider = await self.get_provider(provider_id)
+        if provider.provider_type != "ollama":
+            raise ConflictError("Only Ollama providers support model deletion")
+
+        base = provider.api_base or "http://localhost:11434"
+
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            resp = await client.request(
+                "DELETE",
+                f"{base}/api/delete",
+                json={"name": model_name},
+            )
+            resp.raise_for_status()
+
+        return {"status": "deleted"}

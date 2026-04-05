@@ -61,6 +61,10 @@ export default function ProvidersPage() {
   const [hfHasToken, setHfHasToken] = useState(false);
   const [hfToken, setHfToken] = useState("");
   const [hfSaving, setHfSaving] = useState(false);
+  const [loraExpanded, setLoraExpanded] = useState<string | null>(null);
+  const [loraForm, setLoraForm] = useState({ model_name: "", base_model: "", adapter_path: "", system_prompt: "" });
+  const [loraCreating, setLoraCreating] = useState(false);
+  const [loraError, setLoraError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderForm>(emptyForm);
   const [testResults, setTestResults] = useState<Record<string, { status: string; detail?: string }>>({});
@@ -623,6 +627,95 @@ export default function ProvidersPage() {
                   </div>
                 );
               })()}
+              {/* LoRA Adapter Management for Ollama */}
+              {p.provider_type === "ollama" && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => {
+                      setLoraExpanded(loraExpanded === p.id ? null : p.id);
+                      setLoraForm({ model_name: "", base_model: "", adapter_path: "", system_prompt: "" });
+                      setLoraError("");
+                    }}
+                    className="text-xs text-matrix-text-dim hover:text-matrix-text-bright transition-colors"
+                  >
+                    {loraExpanded === p.id ? "▾ LoRA Adapters" : "▸ LoRA Adapters"}
+                  </button>
+                  {loraExpanded === p.id && (
+                    <div className="mt-3 space-y-3 rounded-lg bg-matrix-bg/50 p-4">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs text-matrix-text-faint mb-1">Model Name</label>
+                          <input
+                            value={loraForm.model_name}
+                            onChange={(e) => setLoraForm({ ...loraForm, model_name: e.target.value })}
+                            placeholder="e.g. llama3-finance-lora"
+                            className="w-full rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-matrix-text-faint mb-1">Base Model</label>
+                          <select
+                            value={loraForm.base_model}
+                            onChange={(e) => setLoraForm({ ...loraForm, base_model: e.target.value })}
+                            className="w-full rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+                          >
+                            <option value="">Select base model...</option>
+                            {models.filter((m) => m.provider === p.name).map((m) => (
+                              <option key={m.id} value={m.name}>{m.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Adapter GGUF Path</label>
+                        <input
+                          value={loraForm.adapter_path}
+                          onChange={(e) => setLoraForm({ ...loraForm, adapter_path: e.target.value })}
+                          placeholder="/path/on/ollama/host/adapter.gguf"
+                          className="w-full rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
+                        />
+                        <p className="mt-1 text-xs text-matrix-text-faint">
+                          Filesystem path on the Ollama host machine where the GGUF adapter file is located.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">System Prompt (optional)</label>
+                        <input
+                          value={loraForm.system_prompt}
+                          onChange={(e) => setLoraForm({ ...loraForm, system_prompt: e.target.value })}
+                          placeholder="Bake a system prompt into the model"
+                          className="w-full rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
+                        />
+                      </div>
+                      {loraError && <p className="text-sm text-matrix-red">{loraError}</p>}
+                      <button
+                        onClick={async () => {
+                          if (!loraForm.model_name || !loraForm.base_model || !loraForm.adapter_path) return;
+                          setLoraCreating(true); setLoraError("");
+                          try {
+                            await api.post(`/providers/${p.id}/ollama/create-model`, {
+                              model_name: loraForm.model_name,
+                              base_model: loraForm.base_model,
+                              adapter_path: loraForm.adapter_path,
+                              system_prompt: loraForm.system_prompt || undefined,
+                            });
+                            setLoraForm({ model_name: "", base_model: "", adapter_path: "", system_prompt: "" });
+                            loadModels();
+                          } catch (err) {
+                            setLoraError(err instanceof Error ? err.message : "Failed to create model");
+                          } finally {
+                            setLoraCreating(false);
+                          }
+                        }}
+                        disabled={loraCreating || !loraForm.model_name || !loraForm.base_model || !loraForm.adapter_path}
+                        className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {loraCreating ? "Registering..." : "Register Model"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
