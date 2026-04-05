@@ -72,6 +72,10 @@ export default function KnowledgeBasePage() {
   const [queueStatus, setQueueStatus] = useState<{
     pending: number; processing: number; done: number; failed: number; total: number;
   } | null>(null);
+  const [ingestStatus, setIngestStatus] = useState<{
+    state: string; current_step: string; chunks_total: number; chunks_completed: number;
+    error: string | null;
+  } | null>(null);
   const [jobs, setJobs] = useState<{
     job_id: string; source: string | null; total: number; done: number;
     failed: number; pending: number; processing: number; tokens_used: number;
@@ -95,10 +99,24 @@ export default function KnowledgeBasePage() {
         pending: number; processing: number; done: number; failed: number; total: number;
       }>("/knowledge-bases/queue-status");
       setQueueStatus(s);
-      const hasActive = s.pending > 0 || s.processing > 0;
+
+      // Also poll per-KB ingest task status (covers pre-queue phases like HF fetching)
+      let taskRunning = false;
+      if (selectedKB) {
+        const is = await api.get<{
+          state: string; current_step: string; chunks_total: number; chunks_completed: number;
+          error: string | null;
+        }>(`/knowledge-bases/${selectedKB.id}/ingest-status`);
+        setIngestStatus(is.state !== "idle" ? is : null);
+        taskRunning = is.state === "running";
+      }
+
+      const queueActive = s.pending > 0 || s.processing > 0;
+      const hasActive = queueActive || taskRunning;
       setIngesting(hasActive);
       if (!hasActive && pollRef.current) {
         clearInterval(pollRef.current); pollRef.current = null;
+        setIngestStatus(null);
         loadKBs();
       }
     } catch { /* ignore */ }
@@ -145,14 +163,18 @@ export default function KnowledgeBasePage() {
     // Stop any active polling and clear all ingest state
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
-    setStagedFile(null); setAnalysis(null);
+    setStagedFile(null); setAnalysis(null); setIngestStatus(null);
     await Promise.all([loadItems(kb), loadBatches(kb.id), loadSources(kb.id)]);
 
-    // Check for active ingestion via fast global endpoint
+    // Check for active ingestion via fast global endpoint + per-KB task status
     try {
-      const s = await api.get<{ pending: number; processing: number; done: number; failed: number; total: number }>("/knowledge-bases/queue-status");
+      const [s, is] = await Promise.all([
+        api.get<{ pending: number; processing: number; done: number; failed: number; total: number }>("/knowledge-bases/queue-status"),
+        api.get<{ state: string; current_step: string; chunks_total: number; chunks_completed: number; error: string | null }>(`/knowledge-bases/${kb.id}/ingest-status`),
+      ]);
       setQueueStatus(s);
-      if (s.pending > 0 || s.processing > 0) { setIngesting(true); startPolling(); }
+      setIngestStatus(is.state !== "idle" ? is : null);
+      if (s.pending > 0 || s.processing > 0 || is.state === "running") { setIngesting(true); startPolling(); }
     } catch { /* ignore */ }
   };
 
@@ -670,6 +692,34 @@ export default function KnowledgeBasePage() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Ingest task status (pre-queue phases like HF fetching, URL crawling) */}
+                  {ingestStatus && ingestStatus.state === "running" && (
+                    <div className="rounded-lg bg-matrix-input p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-matrix-accent animate-pulse" />
+                        <span className="text-sm text-matrix-text">{ingestStatus.current_step}</span>
+                      </div>
+                      {ingestStatus.chunks_total > 0 && (
+                        <div className="mt-2">
+                          <div className="h-1.5 rounded-full bg-matrix-bg overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-matrix-accent transition-all duration-500"
+                              style={{ width: `${Math.round((ingestStatus.chunks_completed / ingestStatus.chunks_total) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-matrix-text-faint">
+                            {ingestStatus.chunks_completed} / {ingestStatus.chunks_total} chunks
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {ingestStatus && ingestStatus.state === "failed" && ingestStatus.error && (
+                    <div className="rounded-lg bg-matrix-red/10 p-3">
+                      <p className="text-sm text-matrix-red">{ingestStatus.error}</p>
+                    </div>
+                  )}
 
                   {/* Ingest progress */}
                   {queueStatus && queueStatus.total > 0 && (() => {
