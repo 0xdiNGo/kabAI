@@ -23,23 +23,44 @@ def _to_response(agent: Agent) -> AgentResponse:
         name=agent.name,
         slug=agent.slug,
         description=agent.description,
+        tags=agent.tags,
         avatar_url=agent.avatar_url,
         specializations=agent.specializations,
         preferred_model=agent.preferred_model,
         knowledge_base_ids=agent.knowledge_base_ids,
+        exemplar_set_ids=agent.exemplar_set_ids,
+        search_provider_ids=agent.search_provider_ids,
         collaboration_capable=agent.collaboration_capable,
         collaboration_role=agent.collaboration_role,
         is_active=agent.is_active,
     )
 
 
-@router.get("", response_model=list[AgentResponse])
+class AgentListResponse(BaseModel):
+    agents: list[AgentResponse]
+    total: int
+    all_tags: list[str]
+
+
+@router.get("", response_model=AgentListResponse)
 async def list_agents(
+    tag: str | None = None,
+    search: str | None = None,
+    sort: str = "newest",  # newest, oldest, name
+    limit: int = 50,
+    offset: int = 0,
     _user=Depends(get_current_user),
     repo: AgentRepository = Depends(get_agent_repo),
 ):
-    agents = await repo.find_all(active_only=True)
-    return [_to_response(a) for a in agents]
+    agents, total, all_tags = await repo.find_paginated(
+        tag=tag, search=search, sort=sort,
+        limit=limit, offset=offset,
+    )
+    return AgentListResponse(
+        agents=[_to_response(a) for a in agents],
+        total=total,
+        all_tags=all_tags,
+    )
 
 
 class BulkModelUpdate(BaseModel):
@@ -322,10 +343,13 @@ async def get_agent(
         name=agent.name,
         slug=agent.slug,
         description=agent.description,
+        tags=agent.tags,
         avatar_url=agent.avatar_url,
         specializations=agent.specializations,
         preferred_model=agent.preferred_model,
         knowledge_base_ids=agent.knowledge_base_ids,
+        exemplar_set_ids=agent.exemplar_set_ids,
+        search_provider_ids=agent.search_provider_ids,
         collaboration_capable=agent.collaboration_capable,
         collaboration_role=agent.collaboration_role,
         is_active=agent.is_active,

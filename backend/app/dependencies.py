@@ -6,12 +6,17 @@ from app.core.redis import redis_client
 from app.core.security import decode_token
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
+from app.repositories.exemplar_repo import ExemplarRepository
+from app.repositories.ingest_queue_repo import IngestQueueRepository
 from app.repositories.knowledge_repo import KnowledgeRepository
+from app.repositories.search_provider_repo import SearchProviderRepository
 from app.repositories.provider_repo import ProviderRepository
 from app.repositories.settings_repo import SettingsRepository
 from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
+from app.services.exemplar_service import ExemplarService
+from app.services.search_service import SearchService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 from app.services.orchestration.roundtable_service import RoundtableService
@@ -51,6 +56,24 @@ def get_knowledge_repo(database=Depends(get_db)):
     return KnowledgeRepository(database)
 
 
+def get_exemplar_repo(database=Depends(get_db)):
+    return ExemplarRepository(database)
+
+
+def get_ingest_queue_repo(database=Depends(get_db)):
+    return IngestQueueRepository(database)
+
+
+def get_search_provider_repo(database=Depends(get_db)):
+    return SearchProviderRepository(database)
+
+
+def get_search_service(
+    repo: SearchProviderRepository = Depends(get_search_provider_repo),
+):
+    return SearchService(repo)
+
+
 # Services
 def get_auth_service(
     user_repo: UserRepository = Depends(get_user_repo),
@@ -76,8 +99,15 @@ def get_llm_service(
 def get_knowledge_service(
     knowledge_repo: KnowledgeRepository = Depends(get_knowledge_repo),
     llm_service: LLMService = Depends(get_llm_service),
+    queue_repo: IngestQueueRepository = Depends(get_ingest_queue_repo),
 ):
-    return KnowledgeService(knowledge_repo, llm_service)
+    return KnowledgeService(knowledge_repo, llm_service, queue_repo)
+
+
+def get_exemplar_service(
+    exemplar_repo: ExemplarRepository = Depends(get_exemplar_repo),
+):
+    return ExemplarService(exemplar_repo)
 
 
 def get_conversation_service(
@@ -85,8 +115,10 @@ def get_conversation_service(
     agent_repo: AgentRepository = Depends(get_agent_repo),
     llm_service: LLMService = Depends(get_llm_service),
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
+    exemplar_service: ExemplarService = Depends(get_exemplar_service),
+    search_service: SearchService = Depends(get_search_service),
 ):
-    return ConversationService(conversation_repo, agent_repo, llm_service, knowledge_service)
+    return ConversationService(conversation_repo, agent_repo, llm_service, knowledge_service, exemplar_service, search_service)
 
 
 def get_roundtable_service(
@@ -95,8 +127,9 @@ def get_roundtable_service(
     llm_service: LLMService = Depends(get_llm_service),
     settings_repo: SettingsRepository = Depends(get_settings_repo),
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
+    exemplar_service: ExemplarService = Depends(get_exemplar_service),
 ):
-    return RoundtableService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service)
+    return RoundtableService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service, exemplar_service)
 
 
 # Auth dependencies

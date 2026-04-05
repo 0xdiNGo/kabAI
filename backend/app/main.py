@@ -9,9 +9,12 @@ from app.config import settings
 from app.core.database import db
 from app.core.exceptions import TigerTeamError
 from app.core.redis import redis_client
+from app.repositories.exemplar_repo import ExemplarRepository
+from app.repositories.ingest_queue_repo import IngestQueueRepository
 from app.repositories.knowledge_repo import KnowledgeRepository
 from app.services.background_manager import BackgroundTaskManager
 from app.services.ingest_manager import IngestManager
+from app.services.ingest_worker import IngestWorker
 
 
 @asynccontextmanager
@@ -24,8 +27,33 @@ async def lifespan(app: FastAPI):
     # Ensure indexes
     knowledge_repo = KnowledgeRepository(db.db)
     await knowledge_repo.ensure_indexes()
+    exemplar_repo = ExemplarRepository(db.db)
+    await exemplar_repo.ensure_indexes()
+    # Agent indexes
+    agents_coll = db.db["agents"]
+    await agents_coll.create_index("tags")
+    await agents_coll.create_index([("created_at", -1)])
+    queue_repo = IngestQueueRepository(db.db)
+    await queue_repo.ensure_indexes()
+
+    # Start ingest worker
+    from app.repositories.provider_repo import ProviderRepository
+    from app.repositories.settings_repo import SettingsRepository
+    from app.services.llm_service import LLMService
+    from app.services.provider_service import ProviderService
+
+    provider_repo = ProviderRepository(db.db)
+    settings_repo_inst = SettingsRepository(db.db)
+    provider_service = ProviderService(provider_repo, redis_client.client)
+    llm_service = LLMService(provider_service, settings_repo_inst)
+
+    worker = IngestWorker(queue_repo, knowledge_repo, llm_service)
+    app.state.ingest_worker = worker
+    app.state.ingest_queue_repo = queue_repo
+    await worker.start()
     yield
     # Shutdown
+    await app.state.ingest_worker.stop()
     await app.state.ingest_manager.shutdown()
     await app.state.background_manager.shutdown()
     await redis_client.disconnect()

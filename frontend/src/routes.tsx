@@ -6,6 +6,8 @@ import ChatPage from "@/pages/ChatPage";
 import ProvidersPage from "@/pages/ProvidersPage";
 import AgentsPage from "@/pages/AgentsPage";
 import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
+import ExemplarSetPage from "@/pages/ExemplarSetPage";
+import SearchProvidersPage from "@/pages/SearchProvidersPage";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -39,6 +41,22 @@ export default function AppRoutes() {
           element={
             <ProtectedRoute>
               <KnowledgeBasePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/exemplar-sets"
+          element={
+            <ProtectedRoute>
+              <ExemplarSetPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search-providers"
+          element={
+            <ProtectedRoute>
+              <SearchProvidersPage />
             </ProtectedRoute>
           }
         />

@@ -1,7 +1,9 @@
 """Knowledge base service — ingestion (chunking + titling) and retrieval."""
 
+import asyncio
 import logging
 import re
+from urllib.parse import urljoin
 
 import httpx
 import litellm
@@ -12,10 +14,16 @@ from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
 
-# Rough token estimate: 1 token ≈ 4 chars
-TARGET_CHUNK_CHARS = 3200  # ~800 tokens
-MAX_CHUNK_CHARS = 4800     # ~1200 tokens
-DEEP_MAX_LINKS = 10        # Max related URLs to follow in deep research
+# Chunk size presets (chars): name → (target, max)
+CHUNK_PRESETS = {
+    "small": (1600, 2400),    # ~400 tokens — more granular retrieval
+    "medium": (3200, 4800),   # ~800 tokens — default balance
+    "large": (6400, 9600),    # ~1600 tokens — fewer LLM calls, faster ingest
+    "xlarge": (12800, 19200), # ~3200 tokens — very fast, coarse chunks
+}
+DEFAULT_CHUNK_SIZE = "medium"
+CONCURRENT_TITLES = 5  # Max concurrent LLM calls for title generation
+DEEP_MAX_LINKS = 10
 
 
 class IngestLimits:
@@ -44,9 +52,10 @@ class IngestLimits:
 
 
 class KnowledgeService:
-    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService):
+    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService, queue_repo=None):
         self.repo = knowledge_repo
         self.llm_service = llm_service
+        self._queue_repo = queue_repo
         # Status callback set by the API layer for background ingests
         self._status_callback = None
 
@@ -84,44 +93,63 @@ class KnowledgeService:
     async def ingest(
         self, kb_id: str, content: str, source: str | None = None,
         limits: IngestLimits | None = None,
-    ) -> int:
-        """Chunk content and store as knowledge items with batch tracking."""
-        model = await self._resolve_ingest_model(kb_id)
-        chunks = self._chunk_text(content)
+        chunk_size: str = DEFAULT_CHUNK_SIZE,
+        ai_titles: bool = False,
+    ) -> dict:
+        """Chunk content and enqueue for persistent background processing.
+
+        Returns dict with job_id, batch_id, and chunk count.
+        The ingest worker handles title generation and item creation.
+        """
+        from app.models.ingest_queue import IngestQueueItem
+        from uuid import uuid4
+
+        content = self._preprocess_content(content, source)
+        target, max_sz = CHUNK_PRESETS.get(chunk_size, CHUNK_PRESETS[DEFAULT_CHUNK_SIZE])
+        chunks = self._chunk_text(content, target, max_sz)
 
         if limits and limits.at_item_limit:
             logger.warning("Ingest item limit reached (%d), skipping", limits.max_items)
-            return 0
+            return {"job_id": None, "chunks_enqueued": 0}
         if limits:
             chunks = chunks[:limits.items_remaining]
 
-        # Create a batch for rollback tracking
+        # Create batch and job
         batch_id = await self.repo.create_batch(kb_id, source)
+        job_id = str(uuid4())
 
-        items = []
-        for i, chunk in enumerate(chunks):
-            self._update_status(
-                f"Generating title for chunk {i + 1}/{len(chunks)}",
-                source=source,
-            )
-            title = await self._generate_title(chunk, model)
-            items.append(KnowledgeItem(
-                knowledge_base_id=kb_id,
+        # Enqueue all chunks to persistent queue
+        queue_items = [
+            IngestQueueItem(
+                kb_id=kb_id,
                 batch_id=batch_id,
-                title=title,
+                job_id=job_id,
                 content=chunk,
                 source=source,
                 chunk_index=i,
-            ))
+                ai_titles=ai_titles,
+            )
+            for i, chunk in enumerate(chunks)
+        ]
 
-        count = await self.repo.add_items_bulk(items)
-        await self.repo.update_batch_count(batch_id, count)
-        await self.repo.update_item_count(kb_id)
+        count = 0
+        if self._queue_repo:
+            count = await self._queue_repo.enqueue_bulk(queue_items)
+
+        self._update_status(
+            f"Enqueued {count} chunks for processing",
+            chunks_total=count,
+        )
 
         if limits:
             limits.items_created += count
 
-        return count
+        return {
+            "job_id": job_id,
+            "batch_id": batch_id,
+            "chunks_enqueued": count,
+            "source": source,
+        }
 
     async def ingest_url(
         self, kb_id: str, url: str, deep: bool = False,
@@ -215,7 +243,6 @@ class KnowledgeService:
         links = re.findall(r'href=["\']([^"\']+)["\']', html)
 
         # Resolve relative URLs
-        from urllib.parse import urljoin
         absolute_links = []
         seen = set()
         for link in links:
@@ -265,6 +292,86 @@ class KnowledgeService:
             logger.warning("Deep research link selection failed: %s", e)
             return []
 
+    def _preprocess_content(self, content: str, source: str | None = None) -> str:
+        """Preprocess content based on detected format."""
+        ext = (source or "").rsplit(".", 1)[-1].lower() if source else ""
+
+        # Reject binary content
+        if "\x00" in content[:1000]:
+            raise ValueError(
+                f"Binary file detected ({source}). Only text-based files are supported. "
+                "For PDFs, convert to text first."
+            )
+
+        # HTML files
+        if ext in ("html", "htm") or (content.lstrip().startswith("<") and "<html" in content[:500].lower()):
+            return self._strip_html(content)
+
+        # JSON — extract string values
+        if ext == "json" or (content.lstrip().startswith(("{", "["))):
+            try:
+                import json
+                data = json.loads(content)
+                return self._extract_json_text(data)
+            except (json.JSONDecodeError, ValueError):
+                pass  # Not valid JSON, treat as plain text
+
+        # XML — strip tags
+        if ext == "xml" or (content.lstrip().startswith("<?xml") or content.lstrip().startswith("</")):
+            return re.sub(r"<[^>]+>", " ", content).strip()
+
+        # CSV/TSV — convert to readable lines
+        if ext in ("csv", "tsv"):
+            return self._csv_to_text(content, ext)
+
+        # YAML — pass through as-is (already human-readable)
+        # Log files — pass through as-is
+        # Code files — pass through as-is
+        # Everything else — pass through as-is
+        return content
+
+    def _extract_json_text(self, data, depth: int = 0) -> str:
+        """Recursively extract string values from JSON structures."""
+        if depth > 10:
+            return ""
+        parts = []
+        if isinstance(data, str):
+            if len(data) > 20:  # Skip short keys/IDs
+                parts.append(data)
+        elif isinstance(data, dict):
+            for k, v in data.items():
+                extracted = self._extract_json_text(v, depth + 1)
+                if extracted:
+                    parts.append(f"{k}: {extracted}")
+        elif isinstance(data, list):
+            for item in data:
+                extracted = self._extract_json_text(item, depth + 1)
+                if extracted:
+                    parts.append(extracted)
+        return "\n".join(parts)
+
+    def _csv_to_text(self, content: str, ext: str) -> str:
+        """Convert CSV/TSV to readable text."""
+        import csv
+        import io
+        delimiter = "\t" if ext == "tsv" else ","
+        reader = csv.reader(io.StringIO(content), delimiter=delimiter)
+        rows = list(reader)
+        if not rows:
+            return content
+        # Use first row as headers if it looks like headers
+        headers = rows[0] if rows else []
+        lines = []
+        for row in rows[1:]:
+            parts = []
+            for i, val in enumerate(row):
+                if val.strip():
+                    header = headers[i] if i < len(headers) else f"col{i}"
+                    parts.append(f"{header}: {val.strip()}")
+            if parts:
+                lines.append("; ".join(parts))
+        return "\n".join(lines) if lines else content
+
     def _strip_html(self, html: str) -> str:
         """Extract readable text from HTML, stripping tags, scripts, styles."""
         html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
@@ -280,8 +387,10 @@ class KnowledgeService:
         text = re.sub(r"\n\s*\n", "\n\n", text)
         return text.strip()
 
-    async def _generate_title(self, chunk: str, model: str | None = None) -> str:
-        """Use the LLM to generate a brief title for a documentation chunk."""
+    async def _generate_title_with_tokens(
+        self, chunk: str, model: str | None = None
+    ) -> tuple[str, int]:
+        """Generate a title and return (title, tokens_used)."""
         try:
             if not model:
                 model = await self.llm_service.resolve_model(None)
@@ -301,13 +410,25 @@ class KnowledgeService:
                 **kwargs,
             )
             title = response.choices[0].message.content.strip().strip('"\'')
-            return title[:200]
+            tokens = response.usage.total_tokens if response.usage else 0
+            return title[:200], tokens
         except Exception:
             first_line = chunk.split("\n")[0].strip()
-            return first_line[:100] or "Untitled chunk"
+            return first_line[:100] or "Untitled chunk", 0
 
-    def _chunk_text(self, text: str) -> list[str]:
+    async def _generate_title(self, chunk: str, model: str | None = None) -> str:
+        """Convenience wrapper."""
+        title, _ = await self._generate_title_with_tokens(chunk, model)
+        return title
+
+    def _chunk_text(
+        self, text: str,
+        target_chars: int | None = None,
+        max_chars: int | None = None,
+    ) -> list[str]:
         """Split text into chunks by paragraphs, merging small ones."""
+        t = target_chars or CHUNK_PRESETS[DEFAULT_CHUNK_SIZE][0]
+        m = max_chars or CHUNK_PRESETS[DEFAULT_CHUNK_SIZE][1]
         blocks = re.split(r"\n\s*\n|\n(?=#{1,3}\s)", text.strip())
         blocks = [b.strip() for b in blocks if b.strip()]
 
@@ -315,13 +436,13 @@ class KnowledgeService:
         current = ""
 
         for block in blocks:
-            if len(current) + len(block) + 2 <= TARGET_CHUNK_CHARS:
+            if len(current) + len(block) + 2 <= t:
                 current = f"{current}\n\n{block}" if current else block
             else:
                 if current:
                     chunks.append(current)
-                if len(block) > MAX_CHUNK_CHARS:
-                    chunks.extend(self._split_large_block(block))
+                if len(block) > m:
+                    chunks.extend(self._split_large_block(block, t))
                     current = ""
                 else:
                     current = block
@@ -331,14 +452,15 @@ class KnowledgeService:
 
         return chunks
 
-    def _split_large_block(self, block: str) -> list[str]:
+    def _split_large_block(self, block: str, target: int | None = None) -> list[str]:
         """Split an oversized block at sentence boundaries."""
+        target = target or CHUNK_PRESETS[DEFAULT_CHUNK_SIZE][0]
         sentences = re.split(r"(?<=[.!?])\s+", block)
         chunks = []
         current = ""
 
         for sentence in sentences:
-            if len(current) + len(sentence) + 1 <= TARGET_CHUNK_CHARS:
+            if len(current) + len(sentence) + 1 <= target:
                 current = f"{current} {sentence}" if current else sentence
             else:
                 if current:

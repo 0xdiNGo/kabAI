@@ -23,6 +23,42 @@ class AgentRepository:
             agents.append(Agent(**doc))
         return agents
 
+    async def find_paginated(
+        self, tag: str | None = None, search: str | None = None,
+        sort: str = "newest", limit: int = 50, offset: int = 0,
+    ) -> tuple[list[Agent], int, list[str]]:
+        """Paginated agent list with tag filtering, search, sorting."""
+        query: dict = {"is_active": True}
+        if tag:
+            query["tags"] = tag
+        if search:
+            query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"description": {"$regex": search, "$options": "i"}},
+                {"specializations": {"$regex": search, "$options": "i"}},
+                {"tags": {"$regex": search, "$options": "i"}},
+            ]
+
+        sort_key = {
+            "newest": [("created_at", -1)],
+            "oldest": [("created_at", 1)],
+            "name": [("name", 1)],
+        }.get(sort, [("created_at", -1)])
+
+        total = await self.collection.count_documents(query)
+
+        agents = []
+        cursor = self.collection.find(query).sort(sort_key).skip(offset).limit(limit)
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            agents.append(Agent(**doc))
+
+        # Get all distinct tags across active agents
+        all_tags = await self.collection.distinct("tags", {"is_active": True})
+        all_tags = sorted(t for t in all_tags if t)
+
+        return agents, total, all_tags
+
     async def find_by_slugs(self, slugs: list[str]) -> list[Agent]:
         agents = []
         async for doc in self.collection.find({"slug": {"$in": slugs}}):

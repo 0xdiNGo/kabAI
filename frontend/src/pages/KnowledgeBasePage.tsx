@@ -50,9 +50,26 @@ export default function KnowledgeBasePage() {
   const [ingestSource, setIngestSource] = useState("");
   const [ingestUrl, setIngestUrl] = useState("");
   const [deepResearch, setDeepResearch] = useState(false);
+  const [chunkSize, setChunkSize] = useState("medium");
+  const [aiTitles, setAiTitles] = useState(false);
+  const [stagedFile, setStagedFile] = useState<{ name: string; content: string; sizeKB: number } | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<{
+    analysis: { content_type: string; complexity: string; recommended_tier: string; reasoning: string; suggested_chunk_size: string };
+    suggested_model: string | null;
+    available_models: Record<string, string[]>;
+    analyzed_with: string;
+  } | null>(null);
   const [ingesting, setIngesting] = useState(false);
-  const [ingestStep, setIngestStep] = useState("");
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [ingestResult, setIngestResult] = useState("");
+  const [queueStatus, setQueueStatus] = useState<{
+    pending: number; processing: number; done: number; failed: number; total: number;
+  } | null>(null);
+  const [jobs, setJobs] = useState<{
+    job_id: string; source: string | null; total: number; done: number;
+    failed: number; pending: number; processing: number; tokens_used: number;
+  }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const navigate = useNavigate();
@@ -61,26 +78,46 @@ export default function KnowledgeBasePage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  const startPolling = (kbId: string) => {
+  const pollingRef = useRef(false);
+
+  const pollProgress = async () => {
+    if (pollingRef.current) return;
+    pollingRef.current = true;
+    try {
+      // Fast global query — no per-job aggregation
+      const s = await api.get<{
+        pending: number; processing: number; done: number; failed: number; total: number;
+      }>("/knowledge-bases/queue-status");
+      setQueueStatus(s);
+      const hasActive = s.pending > 0 || s.processing > 0;
+      setIngesting(hasActive);
+      if (!hasActive && pollRef.current) {
+        clearInterval(pollRef.current); pollRef.current = null;
+        loadKBs();
+      }
+    } catch { /* ignore */ }
+    pollingRef.current = false;
+  };
+
+  const loadJobsDetail = async (kbId: string) => {
+    // Only called when user expands the detail panel
+    try {
+      const j = await api.get<typeof jobs>(`/knowledge-bases/${kbId}/jobs`);
+      setJobs([...j]);
+    } catch { /* ignore */ }
+  };
+
+  const startPolling = () => {
     if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const s = await api.get<{ state: string; current_step: string; items_created: number; error: string | null; result: Record<string, unknown> | null }>(`/knowledge-bases/${kbId}/ingest-status`);
-        setIngestStep(s.current_step);
-        if (s.state === "completed") {
-          clearInterval(pollRef.current!); pollRef.current = null; setIngesting(false);
-          const items = (s.result?.items_created as number) || s.items_created || 0;
-          setIngestResult(`Ingested ${items} knowledge items`);
-          loadKBs(); if (selectedKB) { loadItems(selectedKB); loadBatches(selectedKB.id); loadSources(selectedKB.id); }
-        } else if (s.state === "failed") {
-          clearInterval(pollRef.current!); pollRef.current = null; setIngesting(false);
-          setIngestResult(`Error: ${s.error}`);
-        } else if (s.state === "cancelled") {
-          clearInterval(pollRef.current!); pollRef.current = null; setIngesting(false);
-          setIngestResult("Ingestion cancelled");
-        }
-      } catch { /* ignore */ }
-    }, 2000);
+    pollingRef.current = false;
+    pollProgress();
+    pollRef.current = setInterval(pollProgress, 3000);
+  };
+
+  const cancelJob = async (jobId: string) => {
+    if (!selectedKB) return;
+    await api.delete(`/knowledge-bases/${selectedKB.id}/jobs/${jobId}`);
+    pollProgress();
   };
 
   const loadKBs = () => { api.get<KB[]>("/knowledge-bases").then(setKbs).catch(() => {}); };
@@ -98,8 +135,18 @@ export default function KnowledgeBasePage() {
     setEditName(kb.name); setEditDesc(kb.description); setEditModel(kb.ingest_model ?? "");
     // Clear ingest state
     setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false);
-    setIngestResult(""); setIngestStep(""); setExpandedItem(null);
+    // Stop any active polling and clear all ingest state
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
+    setStagedFile(null); setAnalysis(null);
     await Promise.all([loadItems(kb), loadBatches(kb.id), loadSources(kb.id)]);
+
+    // Check for active ingestion via fast global endpoint
+    try {
+      const s = await api.get<{ pending: number; processing: number; done: number; failed: number; total: number }>("/knowledge-bases/queue-status");
+      setQueueStatus(s);
+      if (s.pending > 0 || s.processing > 0) { setIngesting(true); startPolling(); }
+    } catch { /* ignore */ }
   };
 
   const createKB = async (e: React.FormEvent) => {
@@ -150,26 +197,114 @@ export default function KnowledgeBasePage() {
 
   const ingest = async () => {
     if (!selectedKB || !ingestText.trim()) return;
-    setIngesting(true); setIngestResult(""); setIngestStep("Starting...");
-    try {
-      await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, { content: ingestText, source: ingestSource || null });
-      setIngestText(""); setIngestSource(""); startPolling(selectedKB.id);
+    setIngesting(true); setIngestResult("");     try {
+      await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, { content: ingestText, source: ingestSource || null, chunk_size: chunkSize, ai_titles: aiTitles });
+      setIngestText(""); setIngestSource(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
   };
 
   const ingestFromUrl = async () => {
     if (!selectedKB || !ingestUrl.trim()) return;
-    setIngesting(true); setIngestResult(""); setIngestStep("Starting URL ingestion...");
-    try {
-      await api.post(`/knowledge-bases/${selectedKB.id}/ingest-url`, { url: ingestUrl, deep: deepResearch });
-      setIngestUrl(""); startPolling(selectedKB.id);
+    setIngesting(true); setIngestResult("");     try {
+      await api.post(`/knowledge-bases/${selectedKB.id}/ingest-url`, { url: ingestUrl, deep: deepResearch, chunk_size: chunkSize, ai_titles: aiTitles });
+      setIngestUrl(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    setIngestText(await file.text()); setIngestSource(file.name);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (file.size > 1024 * 1024 * 1024) {
+      setIngestResult("File too large (max 1GB)");
+      return;
+    }
+
+    const sizeKB = Math.round(file.size / 1024);
+    const sizeMB = Math.round(file.size / (1024 * 1024));
+
+    if (file.size > 200 * 1024 * 1024) {
+      setIngestResult(`Reading ${sizeMB}MB file — this may take a moment...`);
+    }
+
+    try {
+      const content = await file.text();
+      setStagedFile({ name: file.name, content, sizeKB });
+      setIngestResult(file.size > 50 * 1024 * 1024
+        ? `File loaded (${sizeMB}MB). Will upload in ${Math.ceil(content.length / (10 * 1024 * 1024))} segments.`
+        : "");
+    } catch {
+      setIngestResult("Could not read file as text. It may be too large for the browser or a binary file.");
+    }
+  };
+
+  const analyzeContent = async (content: string, source: string | null) => {
+    setAnalyzing(true); setAnalysis(null);
+    try {
+      const res = await api.post<{
+        analysis: { content_type: string; complexity: string; recommended_tier: string; reasoning: string; suggested_chunk_size: string };
+        suggested_model: string | null;
+        available_models: Record<string, string[]>;
+        analyzed_with: string;
+      }>("/knowledge-bases/analyze", {
+        content_sample: content.slice(0, 3000),
+        source,
+      });
+      setAnalysis(res);
+      // Auto-apply suggestions
+      if (res.analysis.suggested_chunk_size) setChunkSize(res.analysis.suggested_chunk_size);
+    } catch {
+      // Silent fail — analysis is optional
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const UPLOAD_SEGMENT_SIZE = 10 * 1024 * 1024; // 10MB per request
+
+  const ingestStagedFile = async () => {
+    if (!selectedKB || !stagedFile) return;
+    setIngesting(true); setIngestResult("");
+
+    try {
+      const content = stagedFile.content;
+      const source = stagedFile.name;
+
+      if (content.length <= UPLOAD_SEGMENT_SIZE) {
+        // Small file — single request
+        await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, {
+          content, source, chunk_size: chunkSize, ai_titles: aiTitles,
+        });
+      } else {
+        // Large file — split into segments and upload each
+        const totalSegments = Math.ceil(content.length / UPLOAD_SEGMENT_SIZE);
+        setIngestResult(`Uploading ${totalSegments} segments...`);
+
+        for (let i = 0; i < totalSegments; i++) {
+          const start = i * UPLOAD_SEGMENT_SIZE;
+          const end = Math.min(start + UPLOAD_SEGMENT_SIZE, content.length);
+          // Find a clean break point (newline) near the boundary
+          let breakAt = end;
+          if (end < content.length) {
+            const lastNewline = content.lastIndexOf("\n", end);
+            if (lastNewline > start) breakAt = lastNewline + 1;
+          }
+          const segment = content.slice(start, breakAt);
+          const segSource = `${source} (part ${i + 1}/${totalSegments})`;
+
+          setIngestResult(`Uploading segment ${i + 1} of ${totalSegments}...`);
+          await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, {
+            content: segment, source: segSource, chunk_size: chunkSize, ai_titles: aiTitles,
+          });
+        }
+      }
+
+      setStagedFile(null); setAnalysis(null);
+      startPolling();
+    } catch (err) {
+      setIngesting(false);
+      setIngestResult(err instanceof Error ? err.message : "File ingestion failed");
+    }
   };
 
   const exportKB = async () => {
@@ -331,35 +466,248 @@ export default function KnowledgeBasePage() {
                       {deepResearch ? "Deep: follows related links. IETF RFCs always get full lineage." : "IETF RFC URLs automatically get full lineage analysis."}
                     </p>
                   </div>
-                  {/* Text */}
+                  {/* File upload */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-sm text-matrix-text-dim">Ingest Text</h3>
-                      <button onClick={() => fileInputRef.current?.click()} className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text hover:bg-matrix-hover transition-colors">Upload File</button>
-                      <input ref={fileInputRef} type="file" accept=".txt,.md,.markdown" onChange={handleFileUpload} className="hidden" />
+                      <h3 className="text-sm text-matrix-text-dim">Upload File</h3>
+                      <button onClick={() => fileInputRef.current?.click()} className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text hover:bg-matrix-hover transition-colors">
+                        {stagedFile ? "Choose Different File" : "Choose File"}
+                      </button>
+                      <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
                     </div>
-                    <textarea value={ingestText} onChange={(e) => setIngestText(e.target.value)} placeholder="Paste content here..." rows={6}
+
+                    {/* Staged file preview with analysis and chunk size comparison */}
+                    {stagedFile && (() => {
+                      const charCount = stagedFile.content.length;
+                      const tokEstimate = Math.round(charCount / 4);
+                      const sizes = [
+                        { key: "small", label: "Small", target: 1600, tokPerChunk: 400, desc: "Best retrieval accuracy" },
+                        { key: "medium", label: "Medium", target: 3200, tokPerChunk: 800, desc: "Balanced (default)" },
+                        { key: "large", label: "Large", target: 6400, tokPerChunk: 1600, desc: "Faster, fewer LLM calls" },
+                        { key: "xlarge", label: "XLarge", target: 12800, tokPerChunk: 3200, desc: "Fastest, coarse chunks" },
+                      ];
+                      const a = analysis?.analysis;
+                      return (
+                        <div className="rounded-lg bg-matrix-input p-4 space-y-3">
+                          {/* File info header */}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm text-matrix-text-bright">{stagedFile.name}</p>
+                              <p className="text-xs text-matrix-text-faint">
+                                {stagedFile.sizeKB.toLocaleString()} KB · ~{tokEstimate.toLocaleString()} tokens of content
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => analyzeContent(stagedFile.content, stagedFile.name)}
+                                disabled={analyzing}
+                                className="rounded bg-matrix-purple/20 px-2.5 py-1 text-xs text-matrix-purple hover:bg-matrix-purple/30 disabled:opacity-50 transition-colors"
+                              >
+                                {analyzing ? "Analyzing..." : analysis ? "Re-analyze" : "Suggest Settings"}
+                              </button>
+                              <button onClick={() => { setStagedFile(null); setAnalysis(null); }}
+                                className="text-xs text-matrix-text-faint hover:text-matrix-red transition-colors">Remove</button>
+                            </div>
+                          </div>
+
+                          {/* AI recommendation */}
+                          {analysis && a && (
+                            <div className="rounded-lg bg-matrix-card p-3 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-matrix-purple">AI Recommendation</span>
+                                <span className="text-xs text-matrix-text-faint">via {analysis.analyzed_with}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                <span className="text-matrix-text-faint">Content type</span>
+                                <span className="text-matrix-text">{a.content_type}</span>
+                                <span className="text-matrix-text-faint">Complexity</span>
+                                <span className={`font-medium ${a.complexity === "simple" ? "text-matrix-green" : a.complexity === "moderate" ? "text-matrix-yellow" : "text-matrix-accent"}`}>
+                                  {a.complexity}
+                                </span>
+                                <span className="text-matrix-text-faint">Recommended tier</span>
+                                <span className="text-matrix-text">{a.recommended_tier === "local" ? "Local (free via Ollama)" : a.recommended_tier === "mid" ? "Mid-tier cloud" : "Premium cloud"}</span>
+                                {analysis.suggested_model && (
+                                  <>
+                                    <span className="text-matrix-text-faint">Suggested model</span>
+                                    <span className="text-matrix-text">{analysis.suggested_model}</span>
+                                  </>
+                                )}
+                                <span className="text-matrix-text-faint">Suggested chunks</span>
+                                <span className="text-matrix-text">{a.suggested_chunk_size}</span>
+                              </div>
+                              <p className="text-xs text-matrix-text-dim italic">{a.reasoning}</p>
+                            </div>
+                          )}
+
+                          {/* Chunk size selector */}
+                          <div className="space-y-1">
+                            <p className="text-xs text-matrix-text-dim mb-2">Select chunk size — each chunk costs one LLM call for title generation:</p>
+                            {sizes.map((sz) => {
+                              const chunks = Math.max(1, Math.ceil(charCount / sz.target));
+                              const titleTokens = aiTitles ? chunks * 550 : 0;
+                              const totalTokens = tokEstimate + titleTokens;
+                              const selected = chunkSize === sz.key;
+                              const suggested = a?.suggested_chunk_size === sz.key;
+                              return (
+                                <button key={sz.key} onClick={() => setChunkSize(sz.key)}
+                                  className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-left transition-colors ${
+                                    selected ? "bg-matrix-accent/15 border border-matrix-accent-hover" : "bg-matrix-card hover:bg-matrix-hover"
+                                  }`}>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-sm font-medium ${selected ? "text-matrix-accent" : "text-matrix-text"}`}>
+                                      {sz.label}
+                                    </span>
+                                    {suggested && !selected && (
+                                      <span className="rounded bg-matrix-purple/20 px-1.5 py-0.5 text-[10px] text-matrix-purple">recommended</span>
+                                    )}
+                                    <span className="text-xs text-matrix-text-faint">~{sz.tokPerChunk} tok/chunk · {sz.desc}</span>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className={`text-sm ${selected ? "text-matrix-accent" : "text-matrix-text-dim"}`}>
+                                      {chunks} chunk{chunks !== 1 ? "s" : ""}
+                                    </span>
+                                    <span className="text-xs text-matrix-text-faint ml-2">
+                                      ~{totalTokens.toLocaleString()} tok
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex items-center justify-between">
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                              <input type="checkbox" checked={aiTitles} onChange={(e) => setAiTitles(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                              <span className="text-xs text-matrix-text-dim">AI titles</span>
+                              <span className="text-xs text-matrix-text-faint">(slower, uses LLM tokens)</span>
+                            </label>
+                            <button onClick={ingestStagedFile} disabled={ingesting}
+                              className="rounded-lg bg-matrix-accent px-6 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                              {ingesting ? "Ingesting..." : "Ingest File"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Paste text */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm text-matrix-text-dim">Paste Text</h3>
+                    <textarea value={ingestText} onChange={(e) => setIngestText(e.target.value)} placeholder="Paste content here..." rows={4}
                       className="w-full resize-none rounded-lg bg-matrix-input px-4 py-2.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
                     <div className="flex items-center gap-3">
                       <input value={ingestSource} onChange={(e) => setIngestSource(e.target.value)} placeholder="Source name (optional)"
                         className="flex-1 rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none" />
                       <button onClick={ingest} disabled={ingesting || !ingestText.trim()}
                         className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                        {ingesting ? "Working..." : "Ingest"}
+                        {ingesting ? "Working..." : "Ingest Text"}
                       </button>
                     </div>
                   </div>
-                  {/* Status */}
-                  {ingesting && ingestStep && (
-                    <div className="flex items-center gap-2 rounded-lg bg-matrix-input px-3 py-2">
-                      <div className="flex gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+
+                  {/* Ingest progress */}
+                  {queueStatus && queueStatus.total > 0 && (() => {
+                    const totalDone = queueStatus.done;
+                    const totalAll = queueStatus.total;
+                    const overallPct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
+                    const isActive = queueStatus.pending > 0 || queueStatus.processing > 0;
+
+                    return (
+                      <div
+                        className="rounded-lg bg-matrix-input p-3 cursor-pointer"
+                        onClick={() => setShowDetailPanel(!showDetailPanel)}
+                      >
+                        {/* Summary line + progress bar */}
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            {isActive && (
+                              <div className="flex gap-0.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "0ms" }} />
+                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
+                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+                              </div>
+                            )}
+                            <span className="text-sm text-matrix-text-bright">
+                              {isActive
+                                ? `Processing: ${totalDone.toLocaleString()} / ${totalAll.toLocaleString()} chunks`
+                                : `Complete: ${totalDone.toLocaleString()} chunks`}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-matrix-accent">{overallPct}%</span>
+                            {isActive && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!selectedKB) return;
+                                  const jbs = await api.get<typeof jobs>(`/knowledge-bases/${selectedKB.id}/jobs`);
+                                  for (const j of jbs) {
+                                    if (j.pending > 0 || j.processing > 0) await cancelJob(j.job_id);
+                                  }
+                                  pollProgress();
+                                }}
+                                className="rounded bg-matrix-card px-2 py-0.5 text-xs text-matrix-red hover:bg-matrix-hover transition-colors"
+                              >
+                                Cancel All
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full bg-matrix-card overflow-hidden">
+                          <div className="h-full bg-matrix-accent rounded-full transition-all duration-500" style={{ width: `${overallPct}%` }} />
+                        </div>
+
+                        {/* Expanded detail panel — loads job detail on demand */}
+                        {showDetailPanel && (
+                          <div className="mt-3 border-t border-matrix-border pt-3 space-y-2">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+                              <span className="text-matrix-text-faint">Chunks processed</span>
+                              <span className="text-matrix-text">{totalDone.toLocaleString()} / {totalAll.toLocaleString()}</span>
+                              <span className="text-matrix-text-faint">Pending</span>
+                              <span className="text-matrix-text">{queueStatus.pending.toLocaleString()}</span>
+                              <span className="text-matrix-text-faint">Processing</span>
+                              <span className="text-matrix-text">{queueStatus.processing}</span>
+                              {queueStatus.failed > 0 && (
+                                <>
+                                  <span className="text-matrix-text-faint">Failed</span>
+                                  <span className="text-matrix-red">{queueStatus.failed}</span>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Per-segment detail — loaded on demand */}
+                            {jobs.length > 0 ? (
+                              <div className="max-h-40 overflow-y-auto space-y-0.5">
+                                {jobs.map((job) => {
+                                  const jdone = job.pending === 0 && job.processing === 0;
+                                  return (
+                                    <div key={job.job_id} className="flex items-center justify-between text-xs px-1">
+                                      <span className={jdone ? "text-matrix-text-faint" : "text-matrix-text"}>
+                                        {job.source || "Text ingest"}
+                                      </span>
+                                      <span className={jdone ? "text-matrix-green" : "text-matrix-text-dim"}>
+                                        {job.done}/{job.total}
+                                        {job.failed > 0 && <span className="text-matrix-red ml-1">({job.failed} err)</span>}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); if (selectedKB) loadJobsDetail(selectedKB.id); }}
+                                className="text-xs text-matrix-accent hover:underline"
+                              >
+                                Load segment details
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <span className="text-xs text-matrix-text-dim">{ingestStep}</span>
-                    </div>
-                  )}
+                    );
+                  })()}
                   {ingestResult && <p className="text-sm text-matrix-text-dim">{ingestResult}</p>}
                 </div>
               )}

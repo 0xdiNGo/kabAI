@@ -13,6 +13,7 @@ class ConversationCreate(BaseModel):
 
 class MessageSend(BaseModel):
     content: str
+    web_search: bool = False
 
 
 class MessageResponse(BaseModel):

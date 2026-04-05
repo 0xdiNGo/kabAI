@@ -8,6 +8,25 @@ from app.models.agent import Agent
 from app.repositories.settings_repo import SettingsRepository
 from app.services.provider_service import ProviderService
 
+SEARCH_TOOL_DEFINITION = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": "Search the internet for current information. Use this when you need up-to-date facts, documentation, or information not in your training data or knowledge base context.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+MAX_TOOL_ROUNDS = 3  # Prevent infinite tool-call loops
+
 
 class LLMService:
     def __init__(self, provider_service: ProviderService, settings_repo: SettingsRepository):
@@ -71,11 +90,12 @@ class LLMService:
         messages: list[dict],
         agent: Agent | None = None,
         context: list | None = None,
+        exemplars: list | None = None,
     ) -> dict:
         """Non-streaming completion. Returns the full message."""
         kwargs = await self._get_model_kwargs(model)
 
-        full_messages = self._build_messages(messages, agent, context)
+        full_messages = self._build_messages(messages, agent, context, exemplars)
         response = await litellm.acompletion(
             model=model,
             messages=full_messages,
@@ -96,6 +116,7 @@ class LLMService:
         messages: list[dict],
         agent: Agent | None = None,
         context: list | None = None,
+        exemplars: list | None = None,
     ) -> AsyncGenerator[str, None]:
         """Streaming completion. Yields SSE-formatted events."""
         yield json.dumps({
@@ -106,7 +127,7 @@ class LLMService:
         })
 
         kwargs = await self._get_model_kwargs(model)
-        full_messages = self._build_messages(messages, agent, context)
+        full_messages = self._build_messages(messages, agent, context, exemplars)
 
         yield json.dumps({"type": "status", "status": "connecting"})
 
@@ -134,12 +155,110 @@ class LLMService:
             "content": full_content,
         })
 
+    async def stream_completion_with_search(
+        self,
+        model: str,
+        messages: list[dict],
+        search_service,
+        agent: Agent | None = None,
+        context: list | None = None,
+        exemplars: list | None = None,
+        search_provider_ids: list[str] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """Streaming completion with web search tool available.
+
+        Uses an agentic loop: non-streaming call with tools to check if the LLM
+        wants to search, execute searches, then final streaming call with results.
+        """
+        yield json.dumps({
+            "type": "status", "status": "thinking",
+            "agent_name": agent.name if agent else None, "model": model,
+        })
+
+        kwargs = await self._get_model_kwargs(model)
+        full_messages = self._build_messages(messages, agent, context, exemplars)
+
+        # Agentic loop: let LLM call search tool, inject results, repeat
+        for round_num in range(MAX_TOOL_ROUNDS):
+            yield json.dumps({"type": "status", "status": "connecting"})
+
+            response = await litellm.acompletion(
+                model=model,
+                messages=full_messages,
+                temperature=agent.temperature if agent else 0.7,
+                max_tokens=agent.max_tokens if agent else 4096,
+                tools=[SEARCH_TOOL_DEFINITION],
+                tool_choice="auto",
+                **kwargs,
+            )
+
+            choice = response.choices[0]
+
+            # If no tool calls, we have the final answer — stream it
+            if not choice.message.tool_calls:
+                # The non-streaming call already has the full response
+                content = choice.message.content or ""
+                # Simulate streaming by yielding the content in chunks
+                yield json.dumps({"type": "status", "status": "generating"})
+                chunk_size = 20
+                for i in range(0, len(content), chunk_size):
+                    yield json.dumps({"type": "token", "content": content[i:i + chunk_size]})
+                yield json.dumps({
+                    "type": "done", "model_used": model, "content": content,
+                })
+                return
+
+            # Process tool calls
+            full_messages.append(choice.message.model_dump())
+
+            for tool_call in choice.message.tool_calls:
+                if tool_call.function.name == "web_search":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                        query = args.get("query", "")
+                        yield json.dumps({
+                            "type": "status", "status": "searching",
+                            "query": query,
+                        })
+
+                        results = await search_service.search(query, provider_ids=search_provider_ids)
+                        result_text = search_service.format_results_for_context(results)
+
+                        full_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result_text,
+                        })
+                    except Exception as e:
+                        full_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": f"Search failed: {e}",
+                        })
+
+        # If we hit max rounds, do a final streaming call without tools
+        yield json.dumps({"type": "status", "status": "generating"})
+        response = await litellm.acompletion(
+            model=model, messages=full_messages,
+            temperature=agent.temperature if agent else 0.7,
+            max_tokens=agent.max_tokens if agent else 4096,
+            stream=True, **kwargs,
+        )
+        full_content = ""
+        async for chunk in response:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                full_content += delta.content
+                yield json.dumps({"type": "token", "content": delta.content})
+        yield json.dumps({"type": "done", "model_used": model, "content": full_content})
+
     def _build_messages(
-        self, messages: list[dict], agent: Agent | None, context: list | None = None
+        self, messages: list[dict], agent: Agent | None,
+        context: list | None = None, exemplars: list | None = None,
     ) -> list[dict]:
         full_messages = []
 
-        # Inject knowledge base context
+        # 1. Inject knowledge base context
         if context:
             context_block = (
                 "[CONTEXT — Answer ONLY from this information. "
@@ -149,7 +268,7 @@ class LLMService:
                 context_block += f"--- {item.title} ---\n{item.content}\n\n"
             full_messages.append({"role": "system", "content": context_block})
 
-        # Agent system prompt with grounding instruction
+        # 2. Agent system prompt with grounding instruction
         if agent and agent.system_prompt:
             prompt = agent.system_prompt
             if context:
@@ -159,7 +278,19 @@ class LLMService:
                     "information to answer accurately, say \"I don't have that information in "
                     "my knowledge base\" — never fabricate information."
                 )
+            if exemplars:
+                prompt += (
+                    "\n\nYou have been provided with example conversations that demonstrate "
+                    "the expected reasoning style and depth. Follow these patterns in your responses."
+                )
             full_messages.append({"role": "system", "content": prompt})
 
+        # 3. Inject few-shot exemplar pairs
+        if exemplars:
+            for pair in exemplars:
+                full_messages.append({"role": "user", "content": pair.user_content})
+                full_messages.append({"role": "assistant", "content": pair.assistant_content})
+
+        # 4. Conversation history + current message
         full_messages.extend(messages)
         return full_messages

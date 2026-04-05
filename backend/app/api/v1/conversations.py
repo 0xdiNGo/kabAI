@@ -162,7 +162,8 @@ async def send_message_stream(
             )
         else:
             coro = svc.run_message_stream(
-                conversation_id, user.id, body.content, queue
+                conversation_id, user.id, body.content, queue,
+                web_search=body.web_search,
             )
 
         await bg.start_chat_with_queue(

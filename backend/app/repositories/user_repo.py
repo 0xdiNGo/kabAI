@@ -1,3 +1,4 @@
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.user import User
@@ -13,8 +14,6 @@ class UserRepository:
         return str(result.inserted_id)
 
     async def find_by_id(self, user_id: str) -> User | None:
-        from bson import ObjectId
-
         doc = await self.collection.find_one({"_id": ObjectId(user_id)})
         if doc:
             doc["_id"] = str(doc["_id"])

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Agent } from "@/types/agent";
 import type { ModelInfo } from "@/types/provider";
 
 interface KB { id: string; name: string; description: string; item_count: number; }
+interface ES { id: string; name: string; description: string; pair_count: number; }
 
 interface AgentForm {
   name: string;
   slug: string;
   description: string;
+  tags: string;
   system_prompt: string;
   specializations: string;
   preferred_model: string;
@@ -17,6 +19,7 @@ interface AgentForm {
   temperature: string;
   max_tokens: string;
   knowledge_base_ids: string[];
+  exemplar_set_ids: string[];
   collaboration_capable: boolean;
   collaboration_role: string;
 }
@@ -25,6 +28,7 @@ const emptyForm: AgentForm = {
   name: "",
   slug: "",
   description: "",
+  tags: "",
   system_prompt: "",
   specializations: "",
   preferred_model: "",
@@ -32,6 +36,7 @@ const emptyForm: AgentForm = {
   temperature: "0.7",
   max_tokens: "4096",
   knowledge_base_ids: [],
+  exemplar_set_ids: [],
   collaboration_capable: false,
   collaboration_role: "",
 };
@@ -41,11 +46,13 @@ function agentToForm(agent: Agent & { system_prompt?: string; fallback_models?: 
     name: agent.name,
     slug: agent.slug,
     description: agent.description,
+    tags: (agent.tags ?? []).join(", "),
     system_prompt: agent.system_prompt ?? "",
     specializations: agent.specializations.join(", "),
     preferred_model: agent.preferred_model ?? "",
     fallback_models: (agent.fallback_models ?? []).join(", "),
     knowledge_base_ids: agent.knowledge_base_ids ?? [],
+    exemplar_set_ids: agent.exemplar_set_ids ?? [],
     temperature: String(agent.temperature ?? 0.7),
     max_tokens: String(agent.max_tokens ?? 4096),
     collaboration_capable: agent.collaboration_capable,
@@ -64,6 +71,7 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [availableKBs, setAvailableKBs] = useState<KB[]>([]);
+  const [availableES, setAvailableES] = useState<ES[]>([]);
   const [form, setForm] = useState<AgentForm>(emptyForm);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -78,15 +86,33 @@ export default function AgentsPage() {
   const [builderResult, setBuilderResult] = useState<Record<string, unknown> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const loadAgents = () => {
-    api.get<Agent[]>("/agents").then(setAgents).catch(() => {});
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagFilter, setTagFilter] = useState("");
+  const [newTag, setNewTag] = useState("");
+
+  const loadAgents = (tagOverride?: string) => {
+    const tag = tagOverride !== undefined ? tagOverride : tagFilter;
+    const params = new URLSearchParams({ limit: "1000", sort: "newest" });
+    if (tag) params.set("tag", tag);
+    api.get<{ agents: Agent[]; total: number; all_tags: string[] }>(`/agents?${params}`)
+      .then((res) => { setAgents(res.agents); setAllTags(res.all_tags); })
+      .catch(() => {});
   };
 
   useEffect(() => {
     loadAgents();
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
     api.get<KB[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
+    api.get<ES[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
+
+    // Auto-open edit if ?edit=slug is in URL
+    const editSlug = searchParams.get("edit");
+    if (editSlug) {
+      openEdit(editSlug);
+      setSearchParams({}, { replace: true });
+    }
   }, []);
 
   const openCreate = () => {
@@ -119,6 +145,7 @@ export default function AgentsPage() {
         name: form.name,
         slug: form.slug,
         description: form.description,
+        tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
         system_prompt: form.system_prompt,
         specializations: form.specializations
           .split(",")
@@ -132,6 +159,7 @@ export default function AgentsPage() {
         temperature: parseFloat(form.temperature) || 0.7,
         max_tokens: parseInt(form.max_tokens, 10) || 4096,
         knowledge_base_ids: form.knowledge_base_ids,
+        exemplar_set_ids: form.exemplar_set_ids,
         collaboration_capable: form.collaboration_capable,
         collaboration_role: form.collaboration_role || null,
       };
@@ -209,6 +237,7 @@ export default function AgentsPage() {
       name: (builderResult.name as string) || "",
       slug: (builderResult.slug as string) || "",
       description: (builderResult.description as string) || "",
+      tags: "",
       system_prompt: (builderResult.system_prompt as string) || "",
       specializations: ((builderResult.specializations as string[]) || []).join(", "),
       preferred_model: "",
@@ -216,6 +245,7 @@ export default function AgentsPage() {
       temperature: String(builderResult.temperature ?? 0.7),
       max_tokens: String(builderResult.max_tokens ?? 4096),
       knowledge_base_ids: [],
+      exemplar_set_ids: [],
       collaboration_capable: true,
       collaboration_role: (builderResult.collaboration_role as string) || "specialist",
     });
@@ -224,6 +254,29 @@ export default function AgentsPage() {
     setShowBuilder(false);
     setBuilderResult(null);
     setBuilderInput("");
+  };
+
+  const addTagToSelected = async (tag: string) => {
+    if (!tag.trim() || selectedSlugs.length === 0) return;
+    for (const slug of selectedSlugs) {
+      const agent = agents.find((a) => a.slug === slug);
+      if (agent && !agent.tags.includes(tag.trim())) {
+        await api.put(`/agents/${slug}`, { tags: [...agent.tags, tag.trim()] });
+      }
+    }
+    setNewTag("");
+    loadAgents();
+  };
+
+  const removeTagFromSelected = async (tag: string) => {
+    if (!tag || selectedSlugs.length === 0) return;
+    for (const slug of selectedSlugs) {
+      const agent = agents.find((a) => a.slug === slug);
+      if (agent && agent.tags.includes(tag)) {
+        await api.put(`/agents/${slug}`, { tags: agent.tags.filter((t) => t !== tag) });
+      }
+    }
+    loadAgents();
   };
 
   const exportSelected = async () => {
@@ -593,46 +646,102 @@ export default function AgentsPage() {
         </div>
       )}
 
-      {/* Bulk Model Bar */}
+      {/* Tag filter + management */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-matrix-text-faint">Filter:</span>
+        <button
+          onClick={() => { setTagFilter(""); loadAgents(""); }}
+          className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${!tagFilter ? "bg-matrix-accent text-matrix-bg" : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"}`}
+        >
+          All
+        </button>
+        {allTags.map((t) => (
+          <button
+            key={t}
+            onClick={() => { setTagFilter(t); loadAgents(t); }}
+            className={`rounded-full px-2.5 py-0.5 text-xs transition-colors ${tagFilter === t ? "bg-matrix-accent text-matrix-bg" : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"}`}
+          >
+            #{t}
+          </button>
+        ))}
+      </div>
+
+      {/* Bulk actions bar */}
       {selectedSlugs.length > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-lg bg-matrix-accent/10 border border-matrix-accent-hover px-4 py-3">
-          <span className="text-sm text-matrix-text">
-            {selectedSlugs.length} agent{selectedSlugs.length > 1 ? "s" : ""} selected
-          </span>
-          <div className="flex items-center gap-2">
+        <div className="mb-4 rounded-lg bg-matrix-accent/10 border border-matrix-accent-hover px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-matrix-text">
+              {selectedSlugs.length} selected
+            </span>
+            <span className="text-matrix-text-faint">|</span>
+
+            {/* Add tag */}
+            <div className="flex items-center gap-1">
+              <input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addTagToSelected(newTag)}
+                placeholder="new tag"
+                className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text-bright placeholder-matrix-text-faint outline-none w-28"
+              />
+              <button
+                onClick={() => addTagToSelected(newTag)}
+                disabled={!newTag.trim()}
+                className="rounded bg-matrix-accent px-2 py-1 text-xs text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 transition-colors"
+              >
+                + Tag
+              </button>
+            </div>
+
+            {/* Quick tag buttons for common tags */}
+            <button
+              onClick={() => addTagToSelected("default-dashboard")}
+              className="rounded bg-matrix-card px-2 py-1 text-xs text-matrix-text hover:bg-matrix-hover transition-colors"
+            >
+              + dashboard
+            </button>
+
+            {/* Remove tag from selected */}
+            {allTags.length > 0 && (
+              <select
+                onChange={(e) => { if (e.target.value) { removeTagFromSelected(e.target.value); e.target.value = ""; } }}
+                className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text-bright outline-none"
+                defaultValue=""
+              >
+                <option value="">Remove tag...</option>
+                {allTags.map((t) => (<option key={t} value={t}>#{t}</option>))}
+              </select>
+            )}
+
+            <span className="text-matrix-text-faint">|</span>
+
+            {/* Model + Export + Cancel */}
             <select
               value={bulkModel}
               onChange={(e) => setBulkModel(e.target.value)}
-              className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright outline-none"
+              className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text-bright outline-none"
             >
-              <option value="">System default</option>
+              <option value="">System default model</option>
               {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.provider_display_name})
-                </option>
+                <option key={m.id} value={m.id}>{m.name} ({m.provider_display_name})</option>
               ))}
             </select>
-            <button
-              onClick={applyBulkModel}
-              className="rounded-lg bg-matrix-accent px-3 py-1.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors"
-            >
+            <button onClick={applyBulkModel}
+              className="rounded bg-matrix-accent px-2 py-1 text-xs text-matrix-bg hover:bg-matrix-accent-hover transition-colors">
               Set Model
             </button>
-            <button
-              onClick={exportSelected}
-              className="rounded-lg bg-matrix-card px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
-            >
+            <button onClick={exportSelected}
+              className="rounded bg-matrix-card px-2 py-1 text-xs text-matrix-text hover:bg-matrix-hover transition-colors">
               Export
             </button>
-            <button
-              onClick={() => setSelectedSlugs([])}
-              className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
-            >
+            <button onClick={() => setSelectedSlugs([])}
+              className="rounded bg-matrix-input px-2 py-1 text-xs text-matrix-text hover:bg-matrix-hover transition-colors">
               Cancel
             </button>
           </div>
         </div>
       )}
+
 
       {/* Import Status */}
       {importStatus && (
@@ -678,6 +787,13 @@ export default function AgentsPage() {
                         )}
                       </div>
                       <p className="mt-1 text-sm text-matrix-text-dim">{agent.description}</p>
+                      {agent.tags.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {agent.tags.map((t) => (
+                            <span key={t} className="rounded-full bg-matrix-card px-2 py-0.5 text-xs text-matrix-text-faint">#{t}</span>
+                          ))}
+                        </div>
+                      )}
                       <div className="mt-2 flex flex-wrap gap-x-4 text-sm text-matrix-text-faint">
                         <span>Model: {agent.preferred_model ?? "System default"}</span>
                         <span>Slug: {agent.slug}</span>
@@ -788,6 +904,27 @@ export default function AgentsPage() {
                                   }}
                                   className="h-3.5 w-3.5 rounded accent-matrix-accent" />
                                 <span className="text-sm text-matrix-text">{kb.name}</span>
+                              </label>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm text-matrix-text-dim">Exemplar Sets</label>
+                        <div className="space-y-1 rounded-lg bg-matrix-input p-2 max-h-32 overflow-y-auto">
+                          {availableES.length === 0 ? (
+                            <p className="text-xs text-matrix-text-faint px-2 py-1">No exemplar sets available</p>
+                          ) : (
+                            availableES.map((es) => (
+                              <label key={es.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-matrix-hover cursor-pointer">
+                                <input type="checkbox" checked={form.exemplar_set_ids.includes(es.id)}
+                                  onChange={(e) => {
+                                    const ids = e.target.checked ? [...form.exemplar_set_ids, es.id] : form.exemplar_set_ids.filter((id) => id !== es.id);
+                                    setForm({ ...form, exemplar_set_ids: ids });
+                                  }}
+                                  className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                                <span className="text-sm text-matrix-text">{es.name}</span>
+                                <span className="text-xs text-matrix-text-faint">({es.pair_count})</span>
                               </label>
                             ))
                           )}

@@ -38,7 +38,13 @@ export function streamPost(
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          // Flush any remaining buffered data
+          if (buffer.trim().startsWith("data: ")) {
+            options.onMessage(buffer.trim().slice(6));
+          }
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");

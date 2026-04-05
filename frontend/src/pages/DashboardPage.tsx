@@ -8,6 +8,26 @@ import type { ModelInfo } from "@/types/provider";
 
 export default function DashboardPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentTotal, setAgentTotal] = useState(0);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string>("default-dashboard");
+  const [agentSearch, setAgentSearch] = useState("");
+  const [agentSort, setAgentSort] = useState("newest");
+  const [agentPage, setAgentPage] = useState(0);
+  const PAGE_SIZE = 24;
+  const [editingSlug, setEditingSlug] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", description: "", tags: "", system_prompt: "",
+    specializations: "", preferred_model: "", fallback_models: "",
+    temperature: "0.7", max_tokens: "4096",
+    knowledge_base_ids: [] as string[], exemplar_set_ids: [] as string[],
+    search_provider_ids: [] as string[],
+    collaboration_capable: false, collaboration_role: "",
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [availableKBs, setAvailableKBs] = useState<{ id: string; name: string }[]>([]);
+  const [availableES, setAvailableES] = useState<{ id: string; name: string }[]>([]);
+  const [availableSP, setAvailableSP] = useState<{ id: string; display_name: string }[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
@@ -20,11 +40,89 @@ export default function DashboardPage() {
     api.get<Conversation[]>("/conversations").then(setConversations).catch(() => {});
   };
 
+  const loadAgents = (tag?: string, search?: string, sort?: string, page?: number) => {
+    const t = tag ?? selectedTag;
+    const s = search ?? agentSearch;
+    const so = sort ?? agentSort;
+    const p = page ?? agentPage;
+    const params = new URLSearchParams();
+    if (t) params.set("tag", t);
+    if (s) params.set("search", s);
+    params.set("sort", so);
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String(p * PAGE_SIZE));
+    api.get<{ agents: Agent[]; total: number; all_tags: string[] }>(`/agents?${params}`)
+      .then((res) => {
+        setAgents(res.agents);
+        setAgentTotal(res.total);
+        setAllTags(res.all_tags);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    api.get<Agent[]>("/agents").then(setAgents).catch(() => {});
+    loadAgents();
     loadConversations();
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
+    api.get<{ id: string; name: string }[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
+    api.get<{ id: string; name: string }[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
+    api.get<{ id: string; display_name: string }[]>("/search-providers").then(setAvailableSP).catch(() => {});
   }, []);
+
+  const openInlineEdit = async (e: React.MouseEvent, slug: string) => {
+    e.stopPropagation();
+    if (editingSlug === slug) { setEditingSlug(null); return; }
+    try {
+      const d = await api.get<{
+        name: string; description: string; tags: string[]; system_prompt: string;
+        specializations: string[]; preferred_model: string | null; fallback_models: string[];
+        temperature: number; max_tokens: number;
+        knowledge_base_ids: string[]; exemplar_set_ids: string[];
+        search_provider_ids: string[];
+        collaboration_capable: boolean; collaboration_role: string | null;
+      }>(`/agents/${slug}`);
+      setEditForm({
+        name: d.name, description: d.description,
+        tags: d.tags.join(", "), system_prompt: d.system_prompt,
+        specializations: d.specializations.join(", "),
+        preferred_model: d.preferred_model ?? "",
+        fallback_models: d.fallback_models.join(", "),
+        temperature: String(d.temperature), max_tokens: String(d.max_tokens),
+        knowledge_base_ids: d.knowledge_base_ids ?? [],
+        exemplar_set_ids: d.exemplar_set_ids ?? [],
+        search_provider_ids: d.search_provider_ids ?? [],
+        collaboration_capable: d.collaboration_capable,
+        collaboration_role: d.collaboration_role ?? "",
+      });
+      setEditingSlug(slug);
+    } catch { /* ignore */ }
+  };
+
+  const saveInlineEdit = async () => {
+    if (!editingSlug) return;
+    setEditSaving(true);
+    try {
+      await api.put(`/agents/${editingSlug}`, {
+        name: editForm.name,
+        description: editForm.description,
+        tags: editForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
+        system_prompt: editForm.system_prompt,
+        specializations: editForm.specializations.split(",").map((s) => s.trim()).filter(Boolean),
+        preferred_model: editForm.preferred_model || null,
+        fallback_models: editForm.fallback_models.split(",").map((s) => s.trim()).filter(Boolean),
+        temperature: parseFloat(editForm.temperature) || 0.7,
+        max_tokens: parseInt(editForm.max_tokens, 10) || 4096,
+        knowledge_base_ids: editForm.knowledge_base_ids,
+        exemplar_set_ids: editForm.exemplar_set_ids,
+        search_provider_ids: editForm.search_provider_ids,
+        collaboration_capable: editForm.collaboration_role !== "",
+        collaboration_role: editForm.collaboration_role || null,
+      });
+    } catch { /* ignore */ }
+    setEditSaving(false);
+    setEditingSlug(null);
+    loadAgents();
+  };
 
   const deleteConversation = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -75,10 +173,22 @@ export default function DashboardPage() {
               Knowledge Bases
             </button>
             <button
+              onClick={() => navigate("/exemplar-sets")}
+              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
+            >
+              Exemplar Sets
+            </button>
+            <button
               onClick={() => navigate("/agents/manage")}
               className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
             >
               Manage Agents
+            </button>
+            <button
+              onClick={() => navigate("/search-providers")}
+              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
+            >
+              Search
             </button>
             <button
               onClick={() => navigate("/providers")}
@@ -92,23 +202,43 @@ export default function DashboardPage() {
 
       {/* Agents Grid */}
       <section className="mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Agents</h2>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Agents <span className="text-sm text-matrix-text-faint font-normal">({agentTotal})</span></h2>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setRoundtableMode(!roundtableMode);
-                setSelectedAgentIds([]);
-              }}
-              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                roundtableMode
-                  ? "bg-matrix-purple text-matrix-bg"
-                  : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"
-              }`}
+              onClick={() => { setRoundtableMode(!roundtableMode); setSelectedAgentIds([]); }}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${roundtableMode ? "bg-matrix-purple text-matrix-bg" : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"}`}
             >
               Roundtable
             </button>
           </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <input
+            value={agentSearch}
+            onChange={(e) => { setAgentSearch(e.target.value); setAgentPage(0); loadAgents(undefined, e.target.value, undefined, 0); }}
+            placeholder="Search agents..."
+            className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none w-48"
+          />
+          <select
+            value={selectedTag}
+            onChange={(e) => { setSelectedTag(e.target.value); setAgentPage(0); loadAgents(e.target.value, undefined, undefined, 0); }}
+            className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright outline-none"
+          >
+            <option value="">All agents</option>
+            {allTags.map((t) => (<option key={t} value={t}>{t}</option>))}
+          </select>
+          <select
+            value={agentSort}
+            onChange={(e) => { setAgentSort(e.target.value); setAgentPage(0); loadAgents(undefined, undefined, e.target.value, 0); }}
+            className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright outline-none"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">Name A-Z</option>
+          </select>
         </div>
 
         {roundtableMode && (
@@ -165,21 +295,167 @@ export default function DashboardPage() {
                 </div>
               </button>
             ) : (
-              <button
+              <div
                 key={agent.id}
-                onClick={() => startAgentChat(agent.id)}
-                className="rounded-xl bg-matrix-card p-5 text-left hover:bg-matrix-input transition-colors"
+                className={`rounded-xl bg-matrix-card p-5 text-left transition-all relative ${editingSlug === agent.slug ? "ring-2 ring-matrix-accent z-10" : "hover:bg-matrix-input cursor-pointer"}`}
+                onClick={() => { if (editingSlug !== agent.slug) startAgentChat(agent.id); }}
               >
-                <h3 className="font-semibold">{agent.name}</h3>
-                <p className="mt-1 text-sm text-matrix-text-dim">{agent.description}</p>
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {agent.specializations.map((s) => (
-                    <span key={s} className="rounded-full bg-matrix-input px-2 py-0.5 text-xs text-matrix-text">
-                      {s}
-                    </span>
-                  ))}
+                <div className="flex items-start justify-between">
+                  <h3 className="font-semibold">{agent.name}</h3>
+                  {user?.role === "admin" && (
+                    <button
+                      onClick={(e) => openInlineEdit(e, agent.slug)}
+                      className={`rounded px-2 py-0.5 text-xs transition-colors ${editingSlug === agent.slug ? "bg-matrix-accent text-matrix-bg" : "text-matrix-text-faint hover:text-matrix-text hover:bg-matrix-card"}`}
+                    >
+                      {editingSlug === agent.slug ? "Close" : "Edit"}
+                    </button>
+                  )}
                 </div>
-              </button>
+
+                {/* Normal card content */}
+                {editingSlug !== agent.slug && (
+                  <>
+                    {agent.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {agent.tags.map((t) => (<span key={t} className="text-xs text-matrix-text-faint">#{t}</span>))}
+                      </div>
+                    )}
+                    <p className="mt-1 text-sm text-matrix-text-dim">{agent.description}</p>
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {agent.specializations.map((s) => (
+                        <span key={s} className="rounded-full bg-matrix-input px-2 py-0.5 text-xs text-matrix-text">{s}</span>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Inline edit form — full agent editor */}
+                {editingSlug === agent.slug && (
+                  <div className="mt-3 space-y-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Name</label>
+                        <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Tags <span className="text-matrix-text-faint">(comma-sep)</span></label>
+                        <input value={editForm.tags} onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright placeholder-matrix-text-faint outline-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-matrix-text-faint mb-1">Description</label>
+                      <input value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-matrix-text-faint mb-1">System Prompt</label>
+                      <textarea value={editForm.system_prompt} onChange={(e) => setEditForm({ ...editForm, system_prompt: e.target.value })}
+                        rows={4} className="w-full resize-none rounded-lg bg-matrix-input px-3 py-2 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-matrix-text-faint mb-1">Specializations <span className="text-matrix-text-faint">(comma-sep)</span></label>
+                      <input value={editForm.specializations} onChange={(e) => setEditForm({ ...editForm, specializations: e.target.value })}
+                        className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Preferred Model</label>
+                        <select value={editForm.preferred_model} onChange={(e) => setEditForm({ ...editForm, preferred_model: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
+                          <option value="">System default</option>
+                          {models.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.provider_display_name})</option>))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Fallback Models <span className="text-matrix-text-faint">(comma-sep)</span></label>
+                        <input value={editForm.fallback_models} onChange={(e) => setEditForm({ ...editForm, fallback_models: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Temperature</label>
+                        <input type="number" step="0.1" min="0" max="1" value={editForm.temperature}
+                          onChange={(e) => setEditForm({ ...editForm, temperature: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Max Tokens</label>
+                        <input type="number" step="256" min="256" value={editForm.max_tokens}
+                          onChange={(e) => setEditForm({ ...editForm, max_tokens: e.target.value })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Collaboration Role</label>
+                        <select value={editForm.collaboration_role}
+                          onChange={(e) => setEditForm({ ...editForm, collaboration_role: e.target.value, collaboration_capable: e.target.value !== "" })}
+                          className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
+                          <option value="">None</option>
+                          <option value="orchestrator">Orchestrator</option>
+                          <option value="specialist">Specialist</option>
+                          <option value="critic">Critic</option>
+                          <option value="synthesizer">Synthesizer</option>
+                          <option value="researcher">Researcher</option>
+                          <option value="devil_advocate">Devil's Advocate</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Knowledge Bases</label>
+                        <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
+                          {availableKBs.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : availableKBs.map((kb) => (
+                            <label key={kb.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
+                              <input type="checkbox" checked={editForm.knowledge_base_ids.includes(kb.id)}
+                                onChange={(e) => setEditForm({ ...editForm, knowledge_base_ids: e.target.checked ? [...editForm.knowledge_base_ids, kb.id] : editForm.knowledge_base_ids.filter((id) => id !== kb.id) })}
+                                className="h-3 w-3 rounded accent-matrix-accent" />
+                              <span className="text-xs text-matrix-text">{kb.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Exemplar Sets</label>
+                        <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
+                          {availableES.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : availableES.map((es) => (
+                            <label key={es.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
+                              <input type="checkbox" checked={editForm.exemplar_set_ids.includes(es.id)}
+                                onChange={(e) => setEditForm({ ...editForm, exemplar_set_ids: e.target.checked ? [...editForm.exemplar_set_ids, es.id] : editForm.exemplar_set_ids.filter((id) => id !== es.id) })}
+                                className="h-3 w-3 rounded accent-matrix-accent" />
+                              <span className="text-xs text-matrix-text">{es.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Search Providers</label>
+                        <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
+                          {availableSP.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None configured</p> : availableSP.map((sp) => (
+                            <label key={sp.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
+                              <input type="checkbox" checked={editForm.search_provider_ids.includes(sp.id)}
+                                onChange={(e) => setEditForm({ ...editForm, search_provider_ids: e.target.checked ? [...editForm.search_provider_ids, sp.id] : editForm.search_provider_ids.filter((id) => id !== sp.id) })}
+                                className="h-3 w-3 rounded accent-matrix-accent" />
+                              <span className="text-xs text-matrix-text">{sp.display_name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={saveInlineEdit} disabled={editSaving}
+                        className="rounded-lg bg-matrix-accent px-3 py-1.5 text-xs font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 transition-colors">
+                        {editSaving ? "Saving..." : "Save"}
+                      </button>
+                      <button onClick={() => setEditingSlug(null)}
+                        className="rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text hover:bg-matrix-hover transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             );
           })}
 
@@ -210,6 +486,31 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Pagination */}
+        {agentTotal > PAGE_SIZE && (
+          <div className="flex items-center justify-between mt-4">
+            <span className="text-xs text-matrix-text-faint">
+              Showing {agentPage * PAGE_SIZE + 1}–{Math.min((agentPage + 1) * PAGE_SIZE, agentTotal)} of {agentTotal}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => { const p = agentPage - 1; setAgentPage(p); loadAgents(undefined, undefined, undefined, p); }}
+                disabled={agentPage === 0}
+                className="rounded px-3 py-1 text-xs text-matrix-text hover:bg-matrix-input disabled:opacity-30 transition-colors"
+              >
+                Prev
+              </button>
+              <button
+                onClick={() => { const p = agentPage + 1; setAgentPage(p); loadAgents(undefined, undefined, undefined, p); }}
+                disabled={(agentPage + 1) * PAGE_SIZE >= agentTotal}
+                className="rounded px-3 py-1 text-xs text-matrix-text hover:bg-matrix-input disabled:opacity-30 transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Recent Conversations */}

@@ -6,6 +6,7 @@ from app.models.conversation import Message
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.settings_repo import SettingsRepository
+from app.services.exemplar_service import ExemplarService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 
@@ -18,12 +19,14 @@ class RoundtableService:
         llm_service: LLMService,
         settings_repo: SettingsRepository,
         knowledge_service: KnowledgeService,
+        exemplar_service: ExemplarService,
     ):
         self.conversation_repo = conversation_repo
         self.agent_repo = agent_repo
         self.llm_service = llm_service
         self.settings_repo = settings_repo
         self.knowledge_service = knowledge_service
+        self.exemplar_service = exemplar_service
 
     async def run_message_stream(
         self,
@@ -86,7 +89,7 @@ class RoundtableService:
                         agent.preferred_model, agent.fallback_models
                     )
 
-                    # Retrieve knowledge base context for this agent
+                    # Retrieve knowledge base context and exemplars for this agent
                     context = None
                     if getattr(agent, "knowledge_base_ids", None):
                         context = await self.knowledge_service.retrieve(
@@ -94,9 +97,16 @@ class RoundtableService:
                         )
                         context = context if context else None
 
+                    exemplars = None
+                    if getattr(agent, "exemplar_set_ids", None):
+                        exemplars = await self.exemplar_service.retrieve(
+                            content, agent.exemplar_set_ids
+                        )
+                        exemplars = exemplars if exemplars else None
+
                     agent_content = ""
                     async for event_data in self.llm_service.stream_completion(
-                        model, thread, augmented_agent, context
+                        model, thread, augmented_agent, context, exemplars
                     ):
                         event = json.loads(event_data)
 
