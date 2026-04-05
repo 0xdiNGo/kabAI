@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { streamPost } from "@/lib/sse";
 import { HelpTip } from "@/components/Tooltip";
+import MarkdownContent from "@/components/MarkdownContent";
 import type { ConversationDetail, Message } from "@/types/conversation";
 
 const IDLE_PHRASES = [
@@ -667,9 +668,13 @@ export default function ChatPage() {
                     Copy
                   </button>
                 )}
-                <p className="whitespace-pre-wrap">
-                  {msg.content === "[PASS]" ? `${msg.agent_name ?? "Agent"} passed` : msg.content}
-                </p>
+                {msg.content === "[PASS]" ? (
+                  <p className="whitespace-pre-wrap">{msg.agent_name ?? "Agent"} passed</p>
+                ) : msg.role === "assistant" ? (
+                  <MarkdownContent content={msg.content} />
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                )}
                 {msg.model_used && msg.content !== "[PASS]" && (
                   <p className="mt-1 text-xs opacity-60">{msg.model_used}</p>
                 )}
@@ -736,7 +741,7 @@ export default function ChatPage() {
                     : undefined
                 }
               >
-                <p className="whitespace-pre-wrap">{streamContent}</p>
+                <MarkdownContent content={streamContent} />
                 <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5" />
               </div>
             </div>

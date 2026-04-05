@@ -306,6 +306,10 @@ class LLMService:
         # 2. Agent system prompt with grounding instruction
         if agent and agent.system_prompt:
             prompt = agent.system_prompt
+            prompt += (
+                "\n\nFormat your responses using Markdown. Use headers, lists, "
+                "code blocks (with language tags), bold, and tables where appropriate."
+            )
             if context:
                 prompt += (
                     "\n\nIMPORTANT: You have been provided with a knowledge base context. "
