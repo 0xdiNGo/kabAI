@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
+import HFImportRouter from "@/components/HFImportRouter";
 import { HelpTip } from "@/components/Tooltip";
 import type { Agent } from "@/types/agent";
 import type { Conversation } from "@/types/conversation";
@@ -32,6 +33,7 @@ export default function DashboardPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
+  const [hfEnabled, setHfEnabled] = useState(false);
   const [roundtableMode, setRoundtableMode] = useState(false);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const navigate = useNavigate();
@@ -68,6 +70,7 @@ export default function DashboardPage() {
     api.get<{ id: string; name: string }[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
     api.get<{ id: string; name: string }[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
     api.get<{ id: string; display_name: string }[]>("/search-providers").then(setAvailableSP).catch(() => {});
+    api.get<{ huggingface_enabled: boolean }>("/settings").then((s) => setHfEnabled(s.huggingface_enabled)).catch(() => {});
   }, []);
 
   const openInlineEdit = async (e: React.MouseEvent, slug: string) => {
@@ -552,6 +555,12 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+
+      {hfEnabled && (
+        <section className="mt-8">
+          <HFImportRouter />
+        </section>
+      )}
     </div>
   );
 }
