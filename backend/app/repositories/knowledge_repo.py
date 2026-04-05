@@ -192,23 +192,31 @@ class KnowledgeRepository:
     ) -> list[KnowledgeItem]:
         """Full-text search using compound index (knowledge_base_id + text).
 
-        Uses a single $in query across all kb_ids — MongoDB will do an index
-        scan per value but in one round-trip, eliminating the sequential loop.
+        The compound text index requires equality on knowledge_base_id, so
+        we query per-KB and merge results sorted by text score.
         """
         if not query.strip() or not kb_ids:
             return []
 
-        results = []
-        cursor = self.items.find(
-            {"knowledge_base_id": {"$in": kb_ids}, "$text": {"$search": query}},
-            {"score": {"$meta": "textScore"}},
-        ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+        import asyncio
 
-        async for doc in cursor:
-            doc.pop("score", None)
-            doc["_id"] = str(doc["_id"])
-            results.append(KnowledgeItem(**doc))
-        return results
+        async def _search_one(kb_id: str) -> list[tuple[float, dict]]:
+            scored = []
+            cursor = self.items.find(
+                {"knowledge_base_id": kb_id, "$text": {"$search": query}},
+                {"score": {"$meta": "textScore"}},
+            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+            async for doc in cursor:
+                score = doc.pop("score", 0)
+                doc["_id"] = str(doc["_id"])
+                scored.append((score, doc))
+            return scored
+
+        per_kb = await asyncio.gather(*[_search_one(kid) for kid in kb_ids])
+        all_scored = [item for sublist in per_kb for item in sublist]
+        all_scored.sort(key=lambda x: x[0], reverse=True)
+
+        return [KnowledgeItem(**doc) for _, doc in all_scored[:limit]]
 
     async def search_within_base(
         self, query: str, kb_id: str, limit: int = 20
