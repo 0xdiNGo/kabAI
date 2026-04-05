@@ -637,7 +637,7 @@ export default function ChatPage() {
                 </p>
               )}
               <div
-                className={`rounded-xl px-4 py-3 ${
+                className={`group/bubble relative rounded-xl px-4 py-3 ${
                   msg.role === "user"
                     ? "bg-matrix-accent text-matrix-bg"
                     : msg.content === "[PASS]"
@@ -654,6 +654,19 @@ export default function ChatPage() {
                     : undefined
                 }
               >
+                {msg.role === "assistant" && msg.content !== "[PASS]" && (
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(msg.content);
+                      const el = document.getElementById(`copy-${msg.id}`);
+                      if (el) { el.textContent = "Copied"; setTimeout(() => { el.textContent = "Copy"; }, 1500); }
+                    }}
+                    id={`copy-${msg.id}`}
+                    className="absolute top-2 right-2 rounded bg-matrix-bg/70 px-1.5 py-0.5 text-[10px] text-matrix-text-faint opacity-0 group-hover/bubble:opacity-100 hover:text-matrix-text-bright transition-opacity"
+                  >
+                    Copy
+                  </button>
+                )}
                 <p className="whitespace-pre-wrap">
                   {msg.content === "[PASS]" ? `${msg.agent_name ?? "Agent"} passed` : msg.content}
                 </p>
