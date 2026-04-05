@@ -11,4 +11,6 @@ class SystemSettings(BaseModel):
     roundtable_max_rounds: int = 3
     ingest_max_items: int = 200
     ingest_max_urls: int = 10
+    huggingface_enabled: bool = False
+    huggingface_token_encrypted: str | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

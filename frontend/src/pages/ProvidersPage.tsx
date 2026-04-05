@@ -57,6 +57,10 @@ export default function ProvidersPage() {
   const [editIngestMaxItems, setEditIngestMaxItems] = useState("200");
   const [ingestMaxUrls, setIngestMaxUrls] = useState(10);
   const [editIngestMaxUrls, setEditIngestMaxUrls] = useState("10");
+  const [hfEnabled, setHfEnabled] = useState(false);
+  const [hfHasToken, setHfHasToken] = useState(false);
+  const [hfToken, setHfToken] = useState("");
+  const [hfSaving, setHfSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderForm>(emptyForm);
   const [testResults, setTestResults] = useState<Record<string, { status: string; detail?: string }>>({});
@@ -77,6 +81,7 @@ export default function ProvidersPage() {
       default_model: string | null; default_ingest_model: string | null;
       max_background_chats: number; roundtable_max_rounds: number;
       ingest_max_items: number; ingest_max_urls: number;
+      huggingface_enabled: boolean; huggingface_has_token: boolean;
     }>("/settings").then((s) => {
       setDefaultModel(s.default_model);
       setSelectedDefault(s.default_model ?? "");
@@ -90,6 +95,8 @@ export default function ProvidersPage() {
       setEditIngestMaxItems(String(s.ingest_max_items));
       setIngestMaxUrls(s.ingest_max_urls);
       setEditIngestMaxUrls(String(s.ingest_max_urls));
+      setHfEnabled(s.huggingface_enabled);
+      setHfHasToken(s.huggingface_has_token);
     }).catch(() => {});
   };
 
@@ -368,6 +375,67 @@ export default function ProvidersPage() {
           <span className="text-sm text-matrix-text-faint">
             Current: {maxRounds} rounds
           </span>
+        </div>
+      </div>
+
+      {/* HuggingFace Integration */}
+      <div className="mb-6 rounded-xl bg-matrix-card p-5">
+        <h2 className="font-semibold mb-3">HuggingFace Integration</h2>
+        <p className="text-sm text-matrix-text-dim mb-3">
+          Pull datasets into knowledge bases, import exemplar sets, and register LoRA adapters from HuggingFace.
+        </p>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hfEnabled}
+              onChange={async (e) => {
+                const enabled = e.target.checked;
+                setHfEnabled(enabled);
+                await api.put("/settings", { huggingface_enabled: enabled });
+              }}
+              className="h-4 w-4 rounded accent-matrix-accent"
+            />
+            <span className="text-sm text-matrix-text">Enable HuggingFace integration</span>
+          </label>
+          {hfEnabled && (
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs text-matrix-text-faint mb-1">
+                  API Token {hfHasToken && <span className="text-matrix-accent">(configured)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={hfToken}
+                  onChange={(e) => setHfToken(e.target.value)}
+                  placeholder={hfHasToken ? "Enter new token to replace" : "hf_..."}
+                  className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
+                />
+              </div>
+              <button
+                onClick={async () => {
+                  if (!hfToken.trim()) return;
+                  setHfSaving(true);
+                  try {
+                    await api.put("/settings", { huggingface_token: hfToken });
+                    setHfHasToken(true);
+                    setHfToken("");
+                  } finally {
+                    setHfSaving(false);
+                  }
+                }}
+                disabled={!hfToken.trim() || hfSaving}
+                className="rounded-lg bg-matrix-accent px-4 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {hfSaving ? "Saving..." : "Save Token"}
+              </button>
+            </div>
+          )}
+          {hfEnabled && (
+            <p className="text-xs text-matrix-text-faint">
+              Optional. A token grants access to gated datasets and higher rate limits.
+            </p>
+          )}
         </div>
       </div>
 

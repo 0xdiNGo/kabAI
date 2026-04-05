@@ -1,8 +1,15 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from app.config import settings as app_config
 from app.dependencies import get_current_user, get_settings_repo, require_admin
 from app.repositories.settings_repo import SettingsRepository
+
+try:
+    from cryptography.fernet import Fernet
+    _fernet = Fernet(app_config.fernet_key.encode()) if app_config.fernet_key else None
+except Exception:
+    _fernet = None
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -14,6 +21,8 @@ class SettingsResponse(BaseModel):
     roundtable_max_rounds: int
     ingest_max_items: int
     ingest_max_urls: int
+    huggingface_enabled: bool
+    huggingface_has_token: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -23,6 +32,8 @@ class SettingsUpdate(BaseModel):
     roundtable_max_rounds: int | None = None
     ingest_max_items: int | None = None
     ingest_max_urls: int | None = None
+    huggingface_enabled: bool | None = None
+    huggingface_token: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -38,6 +49,8 @@ async def get_settings(
         roundtable_max_rounds=settings.roundtable_max_rounds,
         ingest_max_items=settings.ingest_max_items,
         ingest_max_urls=settings.ingest_max_urls,
+        huggingface_enabled=settings.huggingface_enabled,
+        huggingface_has_token=settings.huggingface_token_encrypted is not None,
     )
 
 
@@ -53,5 +66,14 @@ async def update_settings(
     for field in ("default_model", "default_ingest_model"):
         if field in raw:
             updates[field] = raw[field]
+    # Encrypt HF token before storage
+    if "huggingface_token" in updates:
+        token = updates.pop("huggingface_token")
+        if token:
+            updates["huggingface_token_encrypted"] = (
+                _fernet.encrypt(token.encode()).decode() if _fernet else token
+            )
+        else:
+            updates["huggingface_token_encrypted"] = None
     await repo.update(updates)
     return {"message": "Settings updated"}

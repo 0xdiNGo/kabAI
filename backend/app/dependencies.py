@@ -16,6 +16,7 @@ from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.exemplar_service import ExemplarService
+from app.services.huggingface_service import HuggingFaceService
 from app.services.search_service import SearchService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
@@ -108,6 +109,12 @@ def get_exemplar_service(
     exemplar_repo: ExemplarRepository = Depends(get_exemplar_repo),
 ):
     return ExemplarService(exemplar_repo)
+
+
+def get_huggingface_service(
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
+):
+    return HuggingFaceService(settings_repo)
 
 
 def get_conversation_service(
