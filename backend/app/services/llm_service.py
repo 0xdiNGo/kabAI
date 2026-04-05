@@ -178,68 +178,83 @@ class LLMService:
         kwargs = await self._get_model_kwargs(model)
         full_messages = self._build_messages(messages, agent, context, exemplars)
 
-        # Agentic loop: let LLM call search tool, inject results, repeat
-        for round_num in range(MAX_TOOL_ROUNDS):
+        # Try tool-use call. If the model doesn't support tools, fall back to regular streaming.
+        try:
             yield json.dumps({"type": "status", "status": "connecting"})
 
-            response = await litellm.acompletion(
-                model=model,
-                messages=full_messages,
-                temperature=agent.temperature if agent else 0.7,
-                max_tokens=agent.max_tokens if agent else 4096,
-                tools=[SEARCH_TOOL_DEFINITION],
-                tool_choice="auto",
-                **kwargs,
-            )
+            # Agentic loop: let LLM call search tool, inject results, repeat
+            for round_num in range(MAX_TOOL_ROUNDS):
+                response = await litellm.acompletion(
+                    model=model,
+                    messages=full_messages,
+                    temperature=agent.temperature if agent else 0.7,
+                    max_tokens=agent.max_tokens if agent else 4096,
+                    tools=[SEARCH_TOOL_DEFINITION],
+                    tool_choice="auto",
+                    **kwargs,
+                )
 
-            choice = response.choices[0]
+                choice = response.choices[0]
 
-            # If no tool calls, we have the final answer — stream it
-            if not choice.message.tool_calls:
-                # The non-streaming call already has the full response
-                content = choice.message.content or ""
-                # Simulate streaming by yielding the content in chunks
-                yield json.dumps({"type": "status", "status": "generating"})
-                chunk_size = 20
-                for i in range(0, len(content), chunk_size):
-                    yield json.dumps({"type": "token", "content": content[i:i + chunk_size]})
-                yield json.dumps({
-                    "type": "done", "model_used": model, "content": content,
-                })
-                return
+                # If no tool calls, we have the final answer
+                if not choice.message.tool_calls:
+                    content = choice.message.content or ""
+                    yield json.dumps({"type": "status", "status": "generating"})
+                    chunk_size = 20
+                    for i in range(0, len(content), chunk_size):
+                        yield json.dumps({"type": "token", "content": content[i:i + chunk_size]})
+                    yield json.dumps({
+                        "type": "done", "model_used": model, "content": content,
+                    })
+                    return
 
-            # Process tool calls
-            full_messages.append(choice.message.model_dump())
+                # Process tool calls
+                full_messages.append(choice.message.model_dump())
 
-            for tool_call in choice.message.tool_calls:
-                if tool_call.function.name == "web_search":
-                    try:
-                        args = json.loads(tool_call.function.arguments)
-                        query = args.get("query", "")
-                        yield json.dumps({
-                            "type": "status", "status": "searching",
-                            "query": query,
-                        })
+                for tool_call in choice.message.tool_calls:
+                    if tool_call.function.name == "web_search":
+                        try:
+                            args = json.loads(tool_call.function.arguments)
+                            query = args.get("query", "")
+                            yield json.dumps({
+                                "type": "status", "status": "searching",
+                                "query": query,
+                            })
 
-                        results = await search_service.search(query, provider_ids=search_provider_ids)
-                        result_text = search_service.format_results_for_context(results)
+                            results = await search_service.search(query, provider_ids=search_provider_ids)
+                            result_text = search_service.format_results_for_context(results)
 
-                        full_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": result_text,
-                        })
-                    except Exception as e:
-                        full_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": f"Search failed: {e}",
-                        })
+                            full_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": result_text,
+                            })
+                        except Exception as e:
+                            full_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Search failed: {e}",
+                            })
 
-        # If we hit max rounds, do a final streaming call without tools
+        except Exception:
+            # Model doesn't support tools (Anthropic, some Ollama models) —
+            # fall back to regular streaming without search capability
+            pass
+
+        # Final streaming call (either after max tool rounds or tool-use fallback)
         yield json.dumps({"type": "status", "status": "generating"})
+        # Strip tool-related messages that would confuse a non-tool model
+        clean_messages = []
+        for m in full_messages:
+            if isinstance(m, dict):
+                if m.get("role") == "tool":
+                    continue
+                # Strip tool_calls from assistant messages
+                if m.get("tool_calls"):
+                    m = {k: v for k, v in m.items() if k != "tool_calls"}
+            clean_messages.append(m)
         response = await litellm.acompletion(
-            model=model, messages=full_messages,
+            model=model, messages=clean_messages,
             temperature=agent.temperature if agent else 0.7,
             max_tokens=agent.max_tokens if agent else 4096,
             stream=True, **kwargs,
