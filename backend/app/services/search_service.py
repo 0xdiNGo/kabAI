@@ -49,7 +49,16 @@ class SearchService:
 
         try:
             if provider.name == "kagi":
-                return await self._search_kagi(query, api_key, num_results)
+                # Kagi mode from custom_params: "search" (default), "fastgpt", "enrich_web", "enrich_news"
+                mode = provider.custom_params.get("mode", "search")
+                if mode == "fastgpt":
+                    return await self._kagi_fastgpt(query, api_key, num_results)
+                elif mode == "enrich_web":
+                    return await self._kagi_enrich(query, api_key, "web", num_results)
+                elif mode == "enrich_news":
+                    return await self._kagi_enrich(query, api_key, "news", num_results)
+                else:
+                    return await self._search_kagi(query, api_key, num_results)
             elif provider.name == "google":
                 cx = provider.custom_params.get("cx", "")
                 return await self._search_google(query, api_key, cx, num_results)
@@ -70,23 +79,99 @@ class SearchService:
             return []
 
     async def _search_kagi(self, query: str, api_key: str | None, n: int) -> list[SearchResult]:
+        """Kagi Search API — ranked web results."""
+        headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 "https://kagi.com/api/v0/search",
                 params={"q": query, "limit": n},
-                headers={"Authorization": f"Bot {api_key}"} if api_key else {},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
         results = []
         for item in data.get("data", [])[:n]:
             if item.get("t") == 0:  # organic result
+                snippet = item.get("snippet", "")
+                published = item.get("published")
+                if published:
+                    snippet = f"[{published}] {snippet}"
                 results.append(SearchResult(
                     title=item.get("title", ""),
                     url=item.get("url", ""),
-                    snippet=item.get("snippet", ""),
+                    snippet=snippet,
                 ))
         return results
+
+    async def _kagi_fastgpt(self, query: str, api_key: str | None, n: int) -> list[SearchResult]:
+        """Kagi FastGPT API — LLM-synthesized answer with citations."""
+        headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://kagi.com/api/v0/fastgpt",
+                json={"query": query, "web_search": True, "cache": True},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+
+        results = []
+        # The synthesized answer is the primary result
+        output = data.get("output", "")
+        if output:
+            results.append(SearchResult(
+                title=f"FastGPT: {query[:60]}",
+                url="",
+                snippet=output,
+            ))
+        # References as additional results
+        for ref in data.get("references", [])[:n - 1]:
+            results.append(SearchResult(
+                title=ref.get("title", ""),
+                url=ref.get("url", ""),
+                snippet=ref.get("snippet", ""),
+            ))
+        return results
+
+    async def _kagi_enrich(self, query: str, api_key: str | None, index: str, n: int) -> list[SearchResult]:
+        """Kagi Enrichment API — non-commercial web/news results."""
+        headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://kagi.com/api/v0/enrich/{index}",
+                params={"q": query},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        return [
+            SearchResult(
+                title=item.get("title", ""),
+                url=item.get("url", ""),
+                snippet=item.get("snippet", ""),
+            )
+            for item in data.get("data", [])[:n]
+        ]
+
+    async def kagi_summarize(self, url: str, api_key: str | None,
+                              summary_type: str = "takeaway",
+                              engine: str = "cecil") -> str | None:
+        """Kagi Universal Summarizer — summarize a URL or document.
+
+        Useful for KB ingestion: summarize a page before chunking.
+        summary_type: "summary" (prose) or "takeaway" (bullet points)
+        engine: "cecil" (friendly), "agnes" (technical), "muriel" ($1/summary enterprise)
+        """
+        headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(
+                "https://kagi.com/api/v0/summarize",
+                params={"url": url, "summary_type": summary_type, "engine": engine},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", {})
+        return data.get("output")
 
     async def _search_google(self, query: str, api_key: str | None, cx: str, n: int) -> list[SearchResult]:
         async with httpx.AsyncClient(timeout=15) as client:

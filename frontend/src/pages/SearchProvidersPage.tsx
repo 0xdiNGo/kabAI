@@ -4,19 +4,19 @@ import { api } from "@/lib/api";
 
 interface SP { id: string; name: string; display_name: string; api_base: string | null; has_api_key: boolean; custom_params: Record<string, string>; is_enabled: boolean; is_default: boolean; }
 
-const PRESETS: Record<string, { display_name: string; needs_key: boolean; fields: string[] }> = {
-  kagi: { display_name: "Kagi Search", needs_key: true, fields: [] },
-  google: { display_name: "Google Custom Search", needs_key: true, fields: ["cx"] },
-  bing: { display_name: "Bing Web Search", needs_key: true, fields: [] },
-  brave: { display_name: "Brave Search", needs_key: true, fields: [] },
-  duckduckgo: { display_name: "DuckDuckGo", needs_key: false, fields: [] },
-  searxng: { display_name: "SearXNG (self-hosted)", needs_key: false, fields: ["api_base"] },
+const PRESETS: Record<string, { display_name: string; needs_key: boolean; fields: string[]; description: string }> = {
+  kagi: { display_name: "Kagi Search", needs_key: true, fields: ["mode"], description: "Search: ranked results. FastGPT: AI-synthesized answers with citations. Enrich: non-commercial web/news." },
+  google: { display_name: "Google Custom Search", needs_key: true, fields: ["cx"], description: "Requires a Custom Search Engine ID (cx) from Google." },
+  bing: { display_name: "Bing Web Search", needs_key: true, fields: [], description: "Microsoft Bing Web Search API v7." },
+  brave: { display_name: "Brave Search", needs_key: true, fields: [], description: "Privacy-focused web search API." },
+  duckduckgo: { display_name: "DuckDuckGo", needs_key: false, fields: [], description: "Free Instant Answer API. Limited but no API key needed." },
+  searxng: { display_name: "SearXNG (self-hosted)", needs_key: false, fields: ["api_base"], description: "Self-hosted meta search engine. Set your instance URL." },
 };
 
 export default function SearchProvidersPage() {
   const [providers, setProviders] = useState<SP[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", display_name: "", api_key: "", api_base: "", cx: "" });
+  const [form, setForm] = useState({ name: "", display_name: "", api_key: "", api_base: "", cx: "", mode: "search" });
   const [testResult, setTestResult] = useState("");
   const navigate = useNavigate();
 
@@ -25,19 +25,20 @@ export default function SearchProvidersPage() {
 
   const selectPreset = (name: string) => {
     const p = PRESETS[name];
-    if (p) setForm({ ...form, name, display_name: p.display_name, api_key: "", api_base: "", cx: "" });
+    if (p) setForm({ ...form, name, display_name: p.display_name, api_key: "", api_base: "", cx: "", mode: "search" });
   };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     const custom_params: Record<string, string> = {};
     if (form.cx) custom_params.cx = form.cx;
+    if (form.name === "kagi" && form.mode !== "search") custom_params.mode = form.mode;
     await api.post("/search-providers", {
       name: form.name, display_name: form.display_name,
       api_key: form.api_key || null, api_base: form.api_base || null,
       custom_params, is_enabled: true,
     });
-    setForm({ name: "", display_name: "", api_key: "", api_base: "", cx: "" });
+    setForm({ name: "", display_name: "", api_key: "", api_base: "", cx: "", mode: "search" });
     setShowCreate(false); load();
   };
 
@@ -89,6 +90,9 @@ export default function SearchProvidersPage() {
               </button>
             ))}
           </div>
+          {form.name && preset && (
+            <p className="text-xs text-matrix-text-dim mb-3">{preset.description}</p>
+          )}
           {form.name && (
             <form onSubmit={create} className="space-y-3">
               <input value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="Display name" required
@@ -100,6 +104,18 @@ export default function SearchProvidersPage() {
               {form.name === "searxng" && (
                 <input value={form.api_base} onChange={(e) => setForm({ ...form, api_base: e.target.value })} placeholder="http://your-searxng:8888"
                   className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright placeholder-matrix-text-faint outline-none" />
+              )}
+              {form.name === "kagi" && (
+                <div>
+                  <label className="block text-xs text-matrix-text-faint mb-1">Kagi API Mode</label>
+                  <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })}
+                    className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none">
+                    <option value="search">Search — ranked web results ($0.025/query)</option>
+                    <option value="fastgpt">FastGPT — AI-synthesized answers with citations ($0.015/query)</option>
+                    <option value="enrich_web">Enrich Web — non-commercial small web results ($0.002/query)</option>
+                    <option value="enrich_news">Enrich News — non-mainstream news and discussions ($0.002/query)</option>
+                  </select>
+                </div>
               )}
               {form.name === "google" && (
                 <input value={form.cx} onChange={(e) => setForm({ ...form, cx: e.target.value })} placeholder="Custom Search Engine ID (cx)"
