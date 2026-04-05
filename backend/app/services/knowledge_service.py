@@ -154,6 +154,8 @@ class KnowledgeService:
     async def ingest_url(
         self, kb_id: str, url: str, deep: bool = False,
         limits: IngestLimits | None = None,
+        ai_deep_research: bool = False,
+        rfc_analysis: bool = True,
     ) -> dict:
         """Fetch a URL, extract text content, and ingest it.
 
@@ -179,7 +181,7 @@ class KnowledgeService:
                 rfc_num, kb_id,
                 lambda kid, content, source=None: self.ingest(kid, content, source, limits),
                 self.llm_service,
-                include_analysis=False,
+                include_analysis=rfc_analysis,
             )
             return {
                 "items_created": result.total_items,
@@ -208,8 +210,12 @@ class KnowledgeService:
 
         # Deep research: extract and follow related links
         if deep and "html" in content_type and not limits.at_item_limit:
-            self._update_status("Analyzing page for related links")
-            related = await self._find_related_urls(raw_html, url, kb_id)
+            if ai_deep_research:
+                self._update_status("AI analyzing page for related links")
+                related = await self._find_related_urls_ai(raw_html, url, kb_id)
+            else:
+                self._update_status("Scanning page for related links")
+                related = await self._find_related_urls(raw_html, url, kb_id)
             for related_url in related:
                 if limits.at_item_limit or limits.at_url_limit:
                     logger.info("Ingest limits reached, stopping deep research")
@@ -315,6 +321,57 @@ class KnowledgeService:
         # Sort by score descending, return up to DEEP_MAX_LINKS
         scored.sort(key=lambda x: x[0], reverse=True)
         return [url for _, url in scored[:DEEP_MAX_LINKS]]
+
+    async def _find_related_urls_ai(
+        self, html: str, source_url: str, kb_id: str
+    ) -> list[str]:
+        """Use LLM to identify documentation-relevant links from an HTML page."""
+        links = re.findall(r'href=["\']([^"\']+)["\']', html)
+
+        absolute_links = []
+        seen = set()
+        for link in links:
+            full = urljoin(source_url, link)
+            if full.startswith("http") and full not in seen and full != source_url:
+                seen.add(full)
+                absolute_links.append(full)
+
+        if not absolute_links:
+            return []
+
+        try:
+            model = await self._resolve_ingest_model(kb_id)
+            kwargs = await self.llm_service._get_model_kwargs(model)
+            link_list = "\n".join(absolute_links[:100])
+
+            response = await litellm.acompletion(
+                model=model,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"I'm building a knowledge base from {source_url}.\n"
+                        f"Below are links found on that page. Select up to {DEEP_MAX_LINKS} "
+                        f"links that point to related documentation, specifications, guides, "
+                        f"or technical references.\n\n"
+                        f"Exclude: navigation, login, social media, images, stylesheets.\n\n"
+                        f"Return ONLY the selected URLs, one per line.\n\n"
+                        f"Links:\n{link_list}"
+                    ),
+                }],
+                temperature=0.2,
+                max_tokens=1024,
+                **kwargs,
+            )
+
+            selected = response.choices[0].message.content.strip().split("\n")
+            return [
+                u.strip() for u in selected
+                if u.strip().startswith("http") and u.strip() in seen
+            ][:DEEP_MAX_LINKS]
+        except Exception as e:
+            logger.warning("AI deep research link selection failed: %s", e)
+            # Fall back to heuristic
+            return await self._find_related_urls(html, source_url, kb_id)
 
     def _preprocess_content(self, content: str, source: str | None = None) -> str:
         """Preprocess content based on detected format."""

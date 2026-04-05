@@ -50,6 +50,8 @@ export default function KnowledgeBasePage() {
   const [ingestSource, setIngestSource] = useState("");
   const [ingestUrl, setIngestUrl] = useState("");
   const [deepResearch, setDeepResearch] = useState(false);
+  const [aiDeepResearch, setAiDeepResearch] = useState(false);
+  const [rfcAnalysis, setRfcAnalysis] = useState(true);
   const [chunkSize, setChunkSize] = useState("medium");
   const [aiTitles, setAiTitles] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ name: string; content: string; sizeKB: number } | null>(null);
@@ -134,7 +136,7 @@ export default function KnowledgeBasePage() {
     setSelectedKB(kb); setSearchResults(null); setSearchQuery(""); setEditingKB(false);
     setEditName(kb.name); setEditDesc(kb.description); setEditModel(kb.ingest_model ?? "");
     // Clear ingest state
-    setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false);
+    setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false); setAiDeepResearch(false); setRfcAnalysis(true);
     // Stop any active polling and clear all ingest state
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
@@ -206,7 +208,10 @@ export default function KnowledgeBasePage() {
   const ingestFromUrl = async () => {
     if (!selectedKB || !ingestUrl.trim()) return;
     setIngesting(true); setIngestResult("");     try {
-      await api.post(`/knowledge-bases/${selectedKB.id}/ingest-url`, { url: ingestUrl, deep: deepResearch, chunk_size: chunkSize, ai_titles: aiTitles });
+      await api.post(`/knowledge-bases/${selectedKB.id}/ingest-url`, {
+        url: ingestUrl, deep: deepResearch, chunk_size: chunkSize, ai_titles: aiTitles,
+        ai_deep_research: aiDeepResearch, rfc_analysis: rfcAnalysis,
+      });
       setIngestUrl(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
   };
@@ -453,18 +458,27 @@ export default function KnowledgeBasePage() {
                     <div className="flex gap-2">
                       <input value={ingestUrl} onChange={(e) => setIngestUrl(e.target.value)} placeholder="https://docs.example.com/guide"
                         className="flex-1 rounded-lg bg-matrix-input px-4 py-2.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
-                      <label className="flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-                        <input type="checkbox" checked={deepResearch} onChange={(e) => setDeepResearch(e.target.checked)} className="h-3.5 w-3.5 rounded accent-matrix-accent" />
-                        <span className="text-xs text-matrix-text-dim">Deep</span>
-                      </label>
                       <button onClick={ingestFromUrl} disabled={ingesting || !ingestUrl.trim()}
                         className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                         {ingesting ? "Working..." : "Fetch & Ingest"}
                       </button>
                     </div>
-                    <p className="text-xs text-matrix-text-faint">
-                      {deepResearch ? "Deep: follows related links. IETF RFCs always get full lineage." : "IETF RFC URLs automatically get full lineage analysis."}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-4 text-xs">
+                      <label className="flex items-center gap-1.5 cursor-pointer" title="Follow related links from the ingested page">
+                        <input type="checkbox" checked={deepResearch} onChange={(e) => setDeepResearch(e.target.checked)} className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                        <span className="text-matrix-text-dim">Deep research</span>
+                      </label>
+                      {deepResearch && (
+                        <label className="flex items-center gap-1.5 cursor-pointer" title="Use AI to select the most relevant links (costs tokens). Off = heuristic filtering (free, fast).">
+                          <input type="checkbox" checked={aiDeepResearch} onChange={(e) => setAiDeepResearch(e.target.checked)} className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                          <span className="text-matrix-text-dim">AI link selection</span>
+                        </label>
+                      )}
+                      <label className="flex items-center gap-1.5 cursor-pointer" title="For IETF RFCs: generate AI analysis comparing RFC versions, identifying what changed and compliance implications.">
+                        <input type="checkbox" checked={rfcAnalysis} onChange={(e) => setRfcAnalysis(e.target.checked)} className="h-3.5 w-3.5 rounded accent-matrix-accent" />
+                        <span className="text-matrix-text-dim">RFC change analysis</span>
+                      </label>
+                    </div>
                   </div>
                   {/* File upload */}
                   <div className="space-y-2">

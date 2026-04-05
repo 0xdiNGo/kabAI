@@ -58,6 +58,8 @@ class IngestURLRequest(BaseModel):
     deep: bool = False
     chunk_size: str = "medium"
     ai_titles: bool = False
+    ai_deep_research: bool = False  # Use LLM for link selection (vs heuristic)
+    rfc_analysis: bool = True  # Generate AI analysis comparing RFC versions
 
 
 @router.get("", response_model=list[KBResponse])
@@ -363,7 +365,11 @@ async def ingest_url(
 
     mgr = request.app.state.ingest_manager
     svc._status_callback = _make_status_callback(mgr, kb_id)
-    coro = svc.ingest_url(kb_id, body.url, deep=body.deep)
+    coro = svc.ingest_url(
+        kb_id, body.url, deep=body.deep,
+        ai_deep_research=body.ai_deep_research,
+        rfc_analysis=body.rfc_analysis,
+    )
     await mgr.start_ingest(kb_id, coro)
     return {"status": "started", "kb_id": kb_id}
 
