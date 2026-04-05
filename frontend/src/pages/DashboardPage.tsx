@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
+import { HelpTip } from "@/components/Tooltip";
 import type { Agent } from "@/types/agent";
 import type { Conversation } from "@/types/conversation";
 import type { ModelInfo } from "@/types/provider";
@@ -350,7 +351,7 @@ export default function DashboardPage() {
                         className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
                     </div>
                     <div>
-                      <label className="block text-xs text-matrix-text-faint mb-1">System Prompt</label>
+                      <label className="block text-xs text-matrix-text-faint mb-1">System Prompt<HelpTip text="Instructions that define the agent's personality, expertise, and behavior." /></label>
                       <textarea value={editForm.system_prompt} onChange={(e) => setEditForm({ ...editForm, system_prompt: e.target.value })}
                         rows={4} className="w-full resize-none rounded-lg bg-matrix-input px-3 py-2 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
                     </div>
@@ -361,7 +362,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Preferred Model</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Preferred Model<HelpTip text="Which LLM powers this agent. Falls back to system default." /></label>
                         <select value={editForm.preferred_model} onChange={(e) => setEditForm({ ...editForm, preferred_model: e.target.value })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
                           <option value="">System default</option>
@@ -376,19 +377,19 @@ export default function DashboardPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Temperature</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Temperature<HelpTip text="Controls randomness. 0 = focused. 0.5 = balanced. 0.9+ = creative." /></label>
                         <input type="number" step="0.1" min="0" max="1" value={editForm.temperature}
                           onChange={(e) => setEditForm({ ...editForm, temperature: e.target.value })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
                       </div>
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Max Tokens</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Max Tokens<HelpTip text="Maximum response length in tokens (~4 chars each)." /></label>
                         <input type="number" step="256" min="256" value={editForm.max_tokens}
                           onChange={(e) => setEditForm({ ...editForm, max_tokens: e.target.value })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
                       </div>
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Collaboration Role</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Collaboration Role<HelpTip text="How this agent behaves in roundtable discussions." /></label>
                         <select value={editForm.collaboration_role}
                           onChange={(e) => setEditForm({ ...editForm, collaboration_role: e.target.value, collaboration_capable: e.target.value !== "" })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
@@ -404,7 +405,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Knowledge Bases</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Knowledge Bases<HelpTip text="Reference material the agent searches to ground its answers." /></label>
                         <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
                           {availableKBs.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : availableKBs.map((kb) => (
                             <label key={kb.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
@@ -417,7 +418,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Exemplar Sets</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Exemplar Sets<HelpTip text="Example conversations that shape how the agent reasons." /></label>
                         <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
                           {availableES.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : availableES.map((es) => (
                             <label key={es.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
@@ -430,7 +431,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Search Providers</label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Search Providers<HelpTip text="Web search engines the agent can use during conversations." /></label>
                         <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-24 overflow-y-auto">
                           {availableSP.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None configured</p> : availableSP.map((sp) => (
                             <label key={sp.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { streamPost } from "@/lib/sse";
+import { HelpTip } from "@/components/Tooltip";
 import type { ConversationDetail, Message } from "@/types/conversation";
 
 const IDLE_PHRASES = [
@@ -447,6 +448,15 @@ export default function ChatPage() {
       } else if (event.type === "keepalive") {
         // ignore keepalives
       } else if (event.type === "error") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(), role: "system",
+            content: `Error: ${event.detail ?? "Something went wrong. The agent could not generate a response."}`,
+            agent_id: null, agent_name: null, model_used: null,
+            created_at: new Date().toISOString(),
+          },
+        ]);
         setIsStreaming(false);
         setIsThinking(false);
         updateCurrentAgent(null);
@@ -504,7 +514,21 @@ export default function ChatPage() {
   };
 
   const handleStreamDone = useCallback(() => {
-    setIsStreaming(false);
+    // If we were streaming but never got a 'done' event, the connection dropped
+    setIsStreaming((prev) => {
+      if (prev) {
+        setMessages((msgs) => [
+          ...msgs,
+          {
+            id: crypto.randomUUID(), role: "system" as const,
+            content: "Connection to agent lost. The response may be incomplete.",
+            agent_id: null, agent_name: null, model_used: null,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+      return false;
+    });
     updateCurrentAgent(null);
     setIsThinking(false);
   }, []);
@@ -589,7 +613,11 @@ export default function ChatPage() {
         {messages.map((msg) =>
           msg.role === "system" ? (
             <div key={msg.id} className="flex justify-center">
-              <span className="rounded-full bg-matrix-card px-4 py-1.5 text-xs text-matrix-text-dim">
+              <span className={`rounded-full px-4 py-1.5 text-xs ${
+                msg.content.startsWith("Error:") || msg.content.startsWith("Connection")
+                  ? "bg-matrix-red/10 text-matrix-red"
+                  : "bg-matrix-card text-matrix-text-dim"
+              }`}>
                 {msg.content}
               </span>
             </div>
@@ -770,7 +798,7 @@ export default function ChatPage() {
                   className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">System Prompt</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">System Prompt<HelpTip text="Instructions that define the agent's personality, expertise, and behavior. Sent to the LLM before every message." /></label>
                 <textarea value={agentForm.system_prompt} onChange={(e) => setAgentForm({ ...agentForm, system_prompt: e.target.value })}
                   rows={6} className="w-full resize-none rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
               </div>
@@ -780,7 +808,7 @@ export default function ChatPage() {
                   className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Preferred Model</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Preferred Model<HelpTip text="Which LLM powers this agent. Falls back to system default if not set or unavailable." /></label>
                 <select value={agentForm.preferred_model} onChange={(e) => setAgentForm({ ...agentForm, preferred_model: e.target.value })}
                   className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
                   <option value="">System default</option>
@@ -794,20 +822,20 @@ export default function ChatPage() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs text-matrix-text-faint mb-0.5">Temperature</label>
+                  <label className="block text-xs text-matrix-text-faint mb-0.5">Temperature<HelpTip text="Controls randomness. 0.0 = deterministic and focused. 0.5 = balanced. 0.9+ = creative and unpredictable." /></label>
                   <input type="number" step="0.1" min="0" max="1" value={agentForm.temperature}
                     onChange={(e) => setAgentForm({ ...agentForm, temperature: e.target.value })}
                     className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs text-matrix-text-faint mb-0.5">Max Tokens</label>
+                  <label className="block text-xs text-matrix-text-faint mb-0.5">Max Tokens<HelpTip text="Maximum length of the agent's response in tokens (~4 chars each). Higher = longer responses but more cost." /></label>
                   <input type="number" step="256" min="256" value={agentForm.max_tokens}
                     onChange={(e) => setAgentForm({ ...agentForm, max_tokens: e.target.value })}
                     className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Collaboration Role</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Collaboration Role<HelpTip text="How this agent behaves in roundtable discussions. Specialist contributes expertise, Critic finds flaws, Synthesizer combines viewpoints." /></label>
                 <select value={agentForm.collaboration_role}
                   onChange={(e) => setAgentForm({ ...agentForm, collaboration_role: e.target.value })}
                   className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
@@ -821,7 +849,7 @@ export default function ChatPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Knowledge Bases</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Knowledge Bases<HelpTip text="Documentation and reference material the agent can search to ground its answers in facts." /></label>
                 <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-20 overflow-y-auto">
                   {chatKBs.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : chatKBs.map((kb) => (
                     <label key={kb.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
@@ -834,7 +862,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Exemplar Sets</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Exemplar Sets<HelpTip text="Example conversations that teach the agent HOW to reason, not just WHAT to know." /></label>
                 <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-20 overflow-y-auto">
                   {chatES.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None</p> : chatES.map((es) => (
                     <label key={es.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
@@ -847,7 +875,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Search Providers</label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Search Providers<HelpTip text="Web search engines the agent can use to find current information during conversations." /></label>
                 <div className="space-y-0.5 rounded-lg bg-matrix-input p-1.5 max-h-20 overflow-y-auto">
                   {chatSP.length === 0 ? <p className="text-xs text-matrix-text-faint px-1">None configured</p> : chatSP.map((sp) => (
                     <label key={sp.id} className="flex items-center gap-1.5 px-1 py-0.5 rounded hover:bg-matrix-hover cursor-pointer">
@@ -887,7 +915,7 @@ export default function ChatPage() {
             rows={1}
             className="flex-1 resize-none rounded-xl bg-matrix-input px-4 py-3 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
           />
-          <label className="flex items-center gap-1.5 cursor-pointer shrink-0" title="Allow agent to search the web">
+          <label className="flex items-center gap-1.5 cursor-pointer shrink-0" title="When enabled, the agent can search the web to find current information. The agent decides when to search.">
             <input
               type="checkbox"
               checked={webSearch}
