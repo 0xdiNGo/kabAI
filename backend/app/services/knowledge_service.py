@@ -179,6 +179,7 @@ class KnowledgeService:
                 rfc_num, kb_id,
                 lambda kid, content, source=None: self.ingest(kid, content, source, limits),
                 self.llm_service,
+                include_analysis=False,
             )
             return {
                 "items_created": result.total_items,
@@ -238,16 +239,41 @@ class KnowledgeService:
     async def _find_related_urls(
         self, html: str, source_url: str, kb_id: str
     ) -> list[str]:
-        """Use the LLM to identify documentation-relevant links from an HTML page."""
+        """Use heuristics to identify documentation-relevant links from an HTML page."""
+        from urllib.parse import urlparse
+
+        # File extensions to exclude
+        _EXCLUDED_EXTENSIONS = {
+            ".jpg", ".jpeg", ".png", ".gif", ".svg", ".ico",  # images
+            ".js", ".css",  # scripts/styles
+            ".zip", ".gz", ".tar", ".bz2", ".xz",  # archives
+            ".mp4", ".mp3", ".wav", ".webm", ".ogg",  # media
+            ".exe", ".dmg", ".deb", ".rpm", ".msi",  # non-doc binaries
+        }
+
+        # URL path segments to exclude
+        _EXCLUDED_SEGMENTS = {
+            "login", "logout", "signup", "cart", "checkout",
+            "share", "social", "facebook", "twitter", "linkedin",
+        }
+
+        # Documentation keywords that make a URL valuable
+        _DOC_KEYWORDS = {
+            "docs", "guide", "tutorial", "api", "reference",
+            "spec", "manual", "readme", "wiki", "faq", "help",
+        }
+
+        source_parsed = urlparse(source_url)
+        source_domain = source_parsed.netloc
+
         # Extract all links from the HTML
         links = re.findall(r'href=["\']([^"\']+)["\']', html)
 
-        # Resolve relative URLs
+        # Resolve relative URLs and deduplicate
         absolute_links = []
         seen = set()
         for link in links:
             full = urljoin(source_url, link)
-            # Filter to same domain and common doc patterns
             if full.startswith("http") and full not in seen and full != source_url:
                 seen.add(full)
                 absolute_links.append(full)
@@ -255,42 +281,40 @@ class KnowledgeService:
         if not absolute_links:
             return []
 
-        # Ask the LLM to pick the most relevant documentation links
-        try:
-            model = await self._resolve_ingest_model(kb_id)
-            kwargs = await self.llm_service._get_model_kwargs(model)
+        # Filter and score links
+        scored: list[tuple[float, str]] = []
+        for url in absolute_links:
+            parsed = urlparse(url)
+            path_lower = parsed.path.lower()
+            url_lower = url.lower()
 
-            # Truncate link list to fit context
-            link_list = "\n".join(absolute_links[:100])
+            # Exclude by file extension
+            if any(path_lower.endswith(ext) for ext in _EXCLUDED_EXTENSIONS):
+                continue
 
-            response = await litellm.acompletion(
-                model=model,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"I'm building a knowledge base from {source_url}.\n"
-                        f"Below are links found on that page. Select up to {DEEP_MAX_LINKS} "
-                        f"links that point to related documentation, specifications, guides, "
-                        f"or technical references that would enhance understanding of the topic.\n\n"
-                        f"Exclude: navigation links, login pages, social media, images, "
-                        f"stylesheets, JavaScript files, and non-documentation pages.\n\n"
-                        f"Return ONLY the selected URLs, one per line, no numbering or explanation.\n\n"
-                        f"Links:\n{link_list}"
-                    ),
-                }],
-                temperature=0.2,
-                max_tokens=1024,
-                **kwargs,
-            )
+            # Exclude by path segment
+            if any(seg in url_lower for seg in _EXCLUDED_SEGMENTS):
+                continue
 
-            selected = response.choices[0].message.content.strip().split("\n")
-            return [
-                u.strip() for u in selected
-                if u.strip().startswith("http") and u.strip() in seen
-            ]
-        except Exception as e:
-            logger.warning("Deep research link selection failed: %s", e)
-            return []
+            # Score: same domain gets a boost
+            score = 0.0
+            is_same_domain = parsed.netloc == source_domain
+            if is_same_domain:
+                score += 2.0
+
+            # Score: documentation keywords
+            keyword_hits = sum(1 for kw in _DOC_KEYWORDS if kw in url_lower)
+            score += keyword_hits * 1.0
+
+            # Only keep if same domain or has doc keywords
+            if not is_same_domain and keyword_hits == 0:
+                continue
+
+            scored.append((score, url))
+
+        # Sort by score descending, return up to DEEP_MAX_LINKS
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [url for _, url in scored[:DEEP_MAX_LINKS]]
 
     def _preprocess_content(self, content: str, source: str | None = None) -> str:
         """Preprocess content based on detected format."""

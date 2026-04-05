@@ -58,6 +58,14 @@ class RoundtableService:
 
         agent_names = [a.name for a in agents]
 
+        # Pre-fetch all KB IDs and exemplar set IDs across all agents
+        all_kb_ids = list(set(kid for a in agents for kid in (a.knowledge_base_ids or [])))
+        all_es_ids = list(set(eid for a in agents for eid in (a.exemplar_set_ids or [])))
+
+        # Single retrieval per type (not per agent)
+        all_context = await self.knowledge_service.retrieve(content, all_kb_ids, limit=10) if all_kb_ids else []
+        all_exemplars = await self.exemplar_service.retrieve(content, all_es_ids, limit=6) if all_es_ids else []
+
         for round_num in range(1, max_rounds + 1):
             # Signal round start
             await queue.put(json.dumps({
@@ -89,20 +97,9 @@ class RoundtableService:
                         agent.preferred_model, agent.fallback_models
                     )
 
-                    # Retrieve knowledge base context and exemplars for this agent
-                    context = None
-                    if getattr(agent, "knowledge_base_ids", None):
-                        context = await self.knowledge_service.retrieve(
-                            content, agent.knowledge_base_ids
-                        )
-                        context = context if context else None
-
-                    exemplars = None
-                    if getattr(agent, "exemplar_set_ids", None):
-                        exemplars = await self.exemplar_service.retrieve(
-                            content, agent.exemplar_set_ids
-                        )
-                        exemplars = exemplars if exemplars else None
+                    # Filter to this agent's KBs/exemplars from pre-fetched results
+                    context = [c for c in all_context if c.knowledge_base_id in (agent.knowledge_base_ids or [])] or None
+                    exemplars = [e for e in all_exemplars if e.exemplar_set_id in (agent.exemplar_set_ids or [])] or None
 
                     agent_content = ""
                     async for event_data in self.llm_service.stream_completion(

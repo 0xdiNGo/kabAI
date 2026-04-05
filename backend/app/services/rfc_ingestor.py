@@ -106,6 +106,7 @@ async def ingest_rfc_lineage(
     kb_id: str,
     ingest_fn,
     llm_service: LLMService,
+    include_analysis: bool = False,
 ) -> RFCIngestResult:
     """Ingest an RFC and its full lineage (obsoletes, updates, etc.)."""
     result = RFCIngestResult()
@@ -170,8 +171,8 @@ async def ingest_rfc_lineage(
             result.rfcs_ingested.append(num)
             result.total_items += count
 
-        # 5. Generate changes analysis between versions
-        if obsoletes or updated_by or obsoleted_by:
+        # 5. Generate changes analysis between versions (LLM-powered, opt-in)
+        if include_analysis and (obsoletes or updated_by or obsoleted_by):
             changes = await _generate_changes_analysis(
                 rfc_num, title, rfc_texts, obsoletes, obsoleted_by,
                 updates, updated_by, llm_service

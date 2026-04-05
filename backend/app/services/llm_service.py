@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import AsyncGenerator
 
 import litellm
@@ -32,11 +33,18 @@ class LLMService:
     def __init__(self, provider_service: ProviderService, settings_repo: SettingsRepository):
         self.provider_service = provider_service
         self.settings_repo = settings_repo
+        self._provider_cache: set[str] | None = None
+        self._cache_time: float = 0.0
 
     async def _get_enabled_provider_types(self) -> set[str]:
-        """Get the set of provider_type strings for all enabled providers."""
+        """Get the set of provider_type strings for all enabled providers (cached 60s)."""
+        now = time.monotonic()
+        if self._provider_cache is not None and (now - self._cache_time) < 60:
+            return self._provider_cache
         providers = await self.provider_service.list_providers()
-        return {p.provider_type for p in providers if p.is_enabled}
+        self._provider_cache = {p.provider_type for p in providers if p.is_enabled}
+        self._cache_time = now
+        return self._provider_cache
 
     async def _is_model_available(self, model: str, enabled_types: set[str]) -> bool:
         """Check if a model's provider is enabled."""

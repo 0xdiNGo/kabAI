@@ -192,31 +192,23 @@ class KnowledgeRepository:
     ) -> list[KnowledgeItem]:
         """Full-text search using compound index (knowledge_base_id + text).
 
-        For optimal index usage, queries each KB separately with equality match
-        on knowledge_base_id, then merges results by score.
+        Uses a single $in query across all kb_ids — MongoDB will do an index
+        scan per value but in one round-trip, eliminating the sequential loop.
         """
         if not query.strip() or not kb_ids:
             return []
 
-        all_results: list[tuple[float, KnowledgeItem]] = []
+        results = []
+        cursor = self.items.find(
+            {"knowledge_base_id": {"$in": kb_ids}, "$text": {"$search": query}},
+            {"score": {"$meta": "textScore"}},
+        ).sort([("score", {"$meta": "textScore"})]).limit(limit)
 
-        for kb_id in kb_ids:
-            cursor = self.items.find(
-                {
-                    "knowledge_base_id": kb_id,  # Equality match → uses compound index
-                    "$text": {"$search": query},
-                },
-                {"score": {"$meta": "textScore"}},
-            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
-
-            async for doc in cursor:
-                score = doc.pop("score", 0)
-                doc["_id"] = str(doc["_id"])
-                all_results.append((score, KnowledgeItem(**doc)))
-
-        # Merge by score, return top N
-        all_results.sort(key=lambda x: x[0], reverse=True)
-        return [item for _, item in all_results[:limit]]
+        async for doc in cursor:
+            doc.pop("score", None)
+            doc["_id"] = str(doc["_id"])
+            results.append(KnowledgeItem(**doc))
+        return results
 
     async def search_within_base(
         self, query: str, kb_id: str, limit: int = 20

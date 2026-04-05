@@ -90,9 +90,11 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
-        # Retrieve knowledge base context and exemplars
-        context = await self._retrieve_context(agent, content)
-        exemplars = await self._retrieve_exemplars(agent, content)
+        # Retrieve knowledge base context and exemplars in parallel
+        context, exemplars = await asyncio.gather(
+            self._retrieve_context(agent, content),
+            self._retrieve_exemplars(agent, content),
+        )
 
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]
@@ -141,9 +143,11 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
-        # Retrieve knowledge base context and exemplars
-        context = await self._retrieve_context(agent, content)
-        exemplars = await self._retrieve_exemplars(agent, content)
+        # Retrieve knowledge base context and exemplars in parallel
+        context, exemplars = await asyncio.gather(
+            self._retrieve_context(agent, content),
+            self._retrieve_exemplars(agent, content),
+        )
 
         # Build message history
         messages = [{"role": m.role, "content": m.content} for m in convo.messages]

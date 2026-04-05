@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-import litellm
-
 from app.core.exceptions import NotFoundError
 from app.dependencies import get_current_user, get_knowledge_repo, get_knowledge_service, get_llm_service, require_admin
 from app.models.knowledge_base import KnowledgeBase, KnowledgeItem as KBItemModel
@@ -110,37 +108,91 @@ async def queue_status(
     return status
 
 
-ANALYZE_PROMPT = """\
-Analyze this content sample and classify it for knowledge base ingestion.
+def _analyze_content_heuristic(sample: str, source: str | None) -> dict:
+    """Classify content for KB ingestion using pure CPU heuristics (no LLM)."""
+    import re
 
-Content type possibilities: plain-text, documentation, code, log-file, config, \
-structured-data (JSON/CSV/XML), RFC/specification, legal/compliance, mixed.
+    ext = ""
+    if source and "." in source:
+        ext = source.rsplit(".", 1)[-1].lower()
 
-Complexity levels:
-- simple: Straightforward prose, logs, configs. Any small model handles titling fine.
-- moderate: Technical docs, code with comments, structured data. A mid-tier model helps.
-- complex: Specifications, legal text, dense technical content with cross-references. \
-A capable model produces significantly better titles and analysis.
+    lines = sample.split("\n")
+    avg_line_len = sum(len(l) for l in lines) / max(len(lines), 1)
 
-Return ONLY valid JSON:
-{
-  "content_type": "documentation",
-  "complexity": "moderate",
-  "recommended_tier": "local",
-  "reasoning": "One sentence why",
-  "suggested_chunk_size": "medium"
-}
+    # --- Detect content_type ---
+    code_extensions = {"py", "js", "go", "rs", "java", "c", "cpp", "ts", "rb", "sh"}
+    code_patterns = {"def ", "function ", "class ", "import "}
+    config_extensions = {"json", "yaml", "yml", "toml", "ini", "env", "cfg"}
+    doc_extensions = {"md", "rst", "adoc"}
+    html_extensions = {"html", "htm"}
+    data_extensions = {"csv", "tsv", "xml"}
 
-recommended_tier must be one of:
-- "local": Any local/free model (Ollama). Fine for simple content. Saves money.
-- "mid": A capable but affordable cloud model. Good for moderate complexity.
-- "premium": Best available model. Worth the cost for complex/dense content.
+    content_type = "plain-text"
 
-suggested_chunk_size must be one of: small, medium, large, xlarge.
-- small for dense reference material where precise retrieval matters
-- medium for general docs
-- large/xlarge for logs, configs, or prose where speed matters more than granularity
-"""
+    if ext in code_extensions or any(p in sample[:2000] for p in code_patterns):
+        content_type = "code"
+    elif ext in config_extensions or sample.lstrip()[:1] in ("{", "["):
+        content_type = "config"
+    elif ext == "log" or ext == "weechatlog" or re.search(
+        r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}", sample[:2000]
+    ):
+        content_type = "log-file"
+    elif ext in doc_extensions or re.search(r"^#{1,3}\s", sample[:2000], re.MULTILINE):
+        content_type = "documentation"
+    elif (
+        sample.upper().count("RFC") >= 3
+        or sum(1 for kw in ("MUST", "SHALL", "SHOULD") if kw in sample[:3000]) >= 3
+    ):
+        content_type = "RFC/specification"
+    elif ext in html_extensions or sample.lstrip().lower().startswith("<html"):
+        content_type = "HTML"
+    elif ext in data_extensions:
+        content_type = "structured-data"
+
+    # --- Detect complexity ---
+    technical_terms = sum(
+        1 for term in (
+            "async", "await", "mutex", "semaphore", "protocol", "algorithm",
+            "encryption", "authentication", "schema", "middleware", "namespace",
+            "deprecated", "idempotent", "serialization", "concurrency",
+        )
+        if term in sample.lower()
+    )
+
+    has_nested = sample.count("{") > 3 or sample.count("(") > 10
+
+    if avg_line_len < 60 and technical_terms < 3 and content_type not in ("code", "RFC/specification"):
+        complexity = "simple"
+    elif technical_terms >= 6 or (avg_line_len > 100 and has_nested) or content_type == "RFC/specification":
+        complexity = "complex"
+    else:
+        complexity = "moderate"
+
+    # --- Suggest chunk_size ---
+    if content_type in ("RFC/specification", "code"):
+        chunk_size = "small"
+    elif content_type in ("documentation", "HTML", "structured-data", "plain-text"):
+        chunk_size = "medium"
+    else:  # log-file, config
+        chunk_size = "large"
+
+    # --- Suggest tier ---
+    tier_map = {"simple": "local", "moderate": "mid", "complex": "premium"}
+    tier = tier_map[complexity]
+
+    reasoning_map = {
+        "simple": f"Simple {content_type} content; a local model is sufficient.",
+        "moderate": f"Moderate {content_type} with some technical content; a mid-tier model helps.",
+        "complex": f"Complex {content_type} with dense technical references; a premium model is recommended.",
+    }
+
+    return {
+        "content_type": content_type,
+        "complexity": complexity,
+        "recommended_tier": tier,
+        "reasoning": reasoning_map[complexity],
+        "suggested_chunk_size": chunk_size,
+    }
 
 
 @router.post("/analyze", response_model=dict)
@@ -158,7 +210,6 @@ async def analyze_content(
         if not p.is_enabled:
             continue
         if p.provider_type == "ollama":
-            # Fetch Ollama model list
             try:
                 models = await llm_service.provider_service.list_models_for_provider(p.id)
                 available_models["local"].extend([m.id for m in models])
@@ -186,49 +237,8 @@ async def analyze_content(
             except Exception:
                 pass
 
-    # Use the cheapest available model for the analysis itself (prefer local)
-    analysis_model = None
-    for tier in ("local", "mid", "premium"):
-        if available_models[tier]:
-            analysis_model = available_models[tier][0]
-            break
-    if not analysis_model:
-        analysis_model = await llm_service.resolve_model(None)
-
-    kwargs = await llm_service._get_model_kwargs(analysis_model)
-
-    # Truncate sample
-    sample = body.content_sample[:3000]
-
-    try:
-        response = await litellm.acompletion(
-            model=analysis_model,
-            messages=[
-                {"role": "system", "content": ANALYZE_PROMPT},
-                {"role": "user", "content": f"Source: {body.source or 'unknown'}\n\n{sample}"},
-            ],
-            temperature=0.2,
-            max_tokens=200,
-            **kwargs,
-        )
-        raw = response.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-            if raw.endswith("```"):
-                raw = raw[:-3]
-            raw = raw.strip()
-
-        import json
-        analysis = json.loads(raw)
-    except Exception:
-        # Fallback heuristic
-        analysis = {
-            "content_type": "unknown",
-            "complexity": "moderate",
-            "recommended_tier": "local",
-            "reasoning": "Could not analyze content; defaulting to local model.",
-            "suggested_chunk_size": "medium",
-        }
+    # Run heuristic analysis (no LLM call)
+    analysis = _analyze_content_heuristic(body.content_sample, body.source)
 
     # Map tier to actual model suggestion
     tier = analysis.get("recommended_tier", "local")
@@ -236,7 +246,6 @@ async def analyze_content(
     if available_models.get(tier):
         suggested_model = available_models[tier][0]
     else:
-        # Fall back through tiers
         for fallback_tier in ("local", "mid", "premium"):
             if available_models.get(fallback_tier):
                 suggested_model = available_models[fallback_tier][0]
@@ -248,7 +257,7 @@ async def analyze_content(
         "available_models": {
             tier: models for tier, models in available_models.items() if models
         },
-        "analyzed_with": analysis_model,
+        "analyzed_with": "heuristic",
     }
 
 

@@ -12,12 +12,16 @@ class ExemplarRepository:
         self.pairs = db["exemplar_pairs"]
 
     async def ensure_indexes(self) -> None:
+        for name in ("exemplar_text_search", "exemplar_set_text_search"):
+            try:
+                await self.pairs.drop_index(name)
+            except Exception:
+                pass
         await self.pairs.create_index(
-            [("user_content", "text"), ("assistant_content", "text")],
+            [("exemplar_set_id", 1), ("user_content", "text"), ("assistant_content", "text")],
             weights={"user_content": 2, "assistant_content": 1},
-            name="exemplar_text_search",
+            name="exemplar_set_text_search",
         )
-        await self.pairs.create_index("exemplar_set_id")
 
     # --- Set CRUD ---
 
