@@ -459,7 +459,7 @@ export default function KnowledgeBasePage() {
                 {(["items", "ingest", "batches", "sources"] as Tab[]).map((t) => (
                   <button key={t} onClick={() => setTab(t)}
                     className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${tab === t ? "bg-matrix-accent text-matrix-bg" : "bg-matrix-card text-matrix-text hover:bg-matrix-input"}`}>
-                    {t === "items" ? `Items (${items.length})` : t === "batches" ? `History (${batches.length})` : t === "sources" ? `Sources (${sources.length})` : "Ingest"}
+                    {t === "items" ? `Items (${itemTotal > 0 ? itemTotal.toLocaleString() : items.length})` : t === "batches" ? `History (${batches.length})` : t === "sources" ? `Sources (${sources.length})` : "Ingest"}
                   </button>
                 ))}
               </div>
