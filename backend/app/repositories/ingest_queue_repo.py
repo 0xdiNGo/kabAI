@@ -36,6 +36,44 @@ class IngestQueueRepository:
             return IngestQueueItem(**doc)
         return None
 
+    async def claim_batch(self, batch_size: int = 50) -> list[IngestQueueItem]:
+        """Claim multiple pending items at once. Much more efficient than one-at-a-time."""
+        # Find IDs of pending items
+        cursor = self.collection.find(
+            {"state": "pending"}, {"_id": 1}
+        ).sort("created_at", 1).limit(batch_size)
+        ids = [doc["_id"] async for doc in cursor]
+
+        if not ids:
+            return []
+
+        # Atomically update all to processing
+        await self.collection.update_many(
+            {"_id": {"$in": ids}, "state": "pending"},
+            {"$set": {"state": "processing"}},
+        )
+
+        # Fetch the claimed items
+        items = []
+        async for doc in self.collection.find({"_id": {"$in": ids}}):
+            doc["_id"] = str(doc["_id"])
+            items.append(IngestQueueItem(**doc))
+        return items
+
+    async def mark_done_bulk(self, item_ids: list[str], tokens_used: int = 0) -> None:
+        """Mark multiple items as done at once."""
+        if not item_ids:
+            return
+        object_ids = [ObjectId(iid) for iid in item_ids]
+        await self.collection.update_many(
+            {"_id": {"$in": object_ids}},
+            {"$set": {
+                "state": "done",
+                "tokens_used": tokens_used,
+                "completed_at": datetime.now(timezone.utc),
+            }},
+        )
+
     async def mark_done(
         self, item_id: str, title: str, tokens_used: int
     ) -> None:
