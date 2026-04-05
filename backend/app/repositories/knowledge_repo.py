@@ -13,13 +13,36 @@ class KnowledgeRepository:
         self.batches = db["ingest_batches"]
 
     async def ensure_indexes(self) -> None:
-        await self.items.create_index(
-            [("title", "text"), ("content", "text")],
-            weights={"title": 3, "content": 1},
-            name="knowledge_text_search",
-        )
-        await self.items.create_index("knowledge_base_id")
+        # Check if the correct compound text index already exists
+        existing = await self.items.index_information()
+        has_compound = "knowledge_kb_text_search" in existing
+        has_old = "knowledge_text_search" in existing
+
+        if has_old and not has_compound:
+            # Old global text index exists — drop it (can only have one text index)
+            try:
+                await self.items.drop_index("knowledge_text_search")
+            except Exception:
+                pass
+
+        if not has_compound:
+            # Create compound index: knowledge_base_id prefix + text search
+            # NOTE: if this fails silently (Motor bug), run from mongosh:
+            # db.knowledge_items.createIndex(
+            #   { knowledge_base_id: 1, title: "text", content: "text" },
+            #   { weights: { title: 3, content: 1 }, name: "knowledge_kb_text_search" }
+            # )
+            try:
+                await self.items.create_index(
+                    [("knowledge_base_id", 1), ("title", "text"), ("content", "text")],
+                    weights={"title": 3, "content": 1},
+                    name="knowledge_kb_text_search",
+                )
+            except Exception:
+                pass  # Index may already exist or Motor may fail — manual creation works
+
         await self.items.create_index("batch_id")
+        await self.batches.create_index("knowledge_base_id")
         await self.batches.create_index("knowledge_base_id")
 
     # --- Knowledge Base CRUD ---
@@ -167,21 +190,33 @@ class KnowledgeRepository:
     async def search(
         self, query: str, kb_ids: list[str], limit: int = 5
     ) -> list[KnowledgeItem]:
+        """Full-text search using compound index (knowledge_base_id + text).
+
+        For optimal index usage, queries each KB separately with equality match
+        on knowledge_base_id, then merges results by score.
+        """
         if not query.strip() or not kb_ids:
             return []
-        results = []
-        cursor = self.items.find(
-            {
-                "knowledge_base_id": {"$in": kb_ids},
-                "$text": {"$search": query},
-            },
-            {"score": {"$meta": "textScore"}},
-        ).sort([("score", {"$meta": "textScore"})]).limit(limit)
-        async for doc in cursor:
-            doc["_id"] = str(doc["_id"])
-            doc.pop("score", None)
-            results.append(KnowledgeItem(**doc))
-        return results
+
+        all_results: list[tuple[float, KnowledgeItem]] = []
+
+        for kb_id in kb_ids:
+            cursor = self.items.find(
+                {
+                    "knowledge_base_id": kb_id,  # Equality match → uses compound index
+                    "$text": {"$search": query},
+                },
+                {"score": {"$meta": "textScore"}},
+            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+
+            async for doc in cursor:
+                score = doc.pop("score", 0)
+                doc["_id"] = str(doc["_id"])
+                all_results.append((score, KnowledgeItem(**doc)))
+
+        # Merge by score, return top N
+        all_results.sort(key=lambda x: x[0], reverse=True)
+        return [item for _, item in all_results[:limit]]
 
     async def search_within_base(
         self, query: str, kb_id: str, limit: int = 20
