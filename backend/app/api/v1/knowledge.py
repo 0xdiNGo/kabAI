@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.core.exceptions import NotFoundError
-from app.dependencies import get_current_user, get_knowledge_repo, get_knowledge_service, get_llm_service, require_admin
+from app.dependencies import get_current_user, get_huggingface_service, get_knowledge_repo, get_knowledge_service, get_llm_service, require_admin
+from app.services.huggingface_service import HuggingFaceService
 from app.models.knowledge_base import KnowledgeBase, KnowledgeItem as KBItemModel
 from app.repositories.knowledge_repo import KnowledgeRepository
 from app.services.knowledge_service import KnowledgeService
@@ -60,6 +61,15 @@ class IngestURLRequest(BaseModel):
     ai_titles: bool = False
     ai_deep_research: bool = False  # Use LLM for link selection (vs heuristic)
     rfc_analysis: bool = True  # Generate AI analysis comparing RFC versions
+
+
+class IngestHFRequest(BaseModel):
+    repo_id: str
+    subset: str | None = None
+    split: str = "train"
+    max_rows: int = 500
+    chunk_size: str = "medium"
+    ai_titles: bool = False
 
 
 @router.get("", response_model=list[KBResponse])
@@ -369,6 +379,34 @@ async def ingest_url(
         kb_id, body.url, deep=body.deep,
         ai_deep_research=body.ai_deep_research,
         rfc_analysis=body.rfc_analysis,
+    )
+    await mgr.start_ingest(kb_id, coro)
+    return {"status": "started", "kb_id": kb_id}
+
+
+@router.post("/{kb_id}/ingest-hf", response_model=dict)
+async def ingest_huggingface(
+    kb_id: str,
+    body: IngestHFRequest,
+    request: Request,
+    _admin=Depends(require_admin),
+    repo: KnowledgeRepository = Depends(get_knowledge_repo),
+    svc: KnowledgeService = Depends(get_knowledge_service),
+    hf_svc: HuggingFaceService = Depends(get_huggingface_service),
+):
+    if not await hf_svc.is_enabled():
+        raise NotFoundError("HuggingFace integration is disabled")
+
+    kb = await repo.find_base_by_id(kb_id)
+    if not kb:
+        raise NotFoundError("KnowledgeBase", kb_id)
+
+    mgr = request.app.state.ingest_manager
+    svc._status_callback = _make_status_callback(mgr, kb_id)
+    coro = svc.ingest_huggingface_dataset(
+        kb_id, body.repo_id, hf_svc,
+        subset=body.subset, split=body.split, max_rows=body.max_rows,
+        chunk_size=body.chunk_size, ai_titles=body.ai_titles,
     )
     await mgr.start_ingest(kb_id, coro)
     return {"status": "started", "kb_id": kb_id}

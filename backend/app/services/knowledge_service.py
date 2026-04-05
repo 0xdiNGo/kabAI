@@ -151,6 +151,99 @@ class KnowledgeService:
             "source": source,
         }
 
+    async def ingest_huggingface_dataset(
+        self, kb_id: str, repo_id: str, hf_service,
+        subset: str | None = None,
+        split: str = "train",
+        max_rows: int = 500,
+        chunk_size: str = DEFAULT_CHUNK_SIZE,
+        ai_titles: bool = False,
+    ) -> dict:
+        """Import rows from a HuggingFace dataset into a knowledge base."""
+        self._update_status("Detecting dataset format")
+        fmt_info = await hf_service.detect_dataset_format(repo_id)
+        fmt = fmt_info["format"]
+        config = subset or fmt_info.get("config")
+
+        if fmt == "unknown":
+            logger.warning("Could not detect format for HF dataset %s", repo_id)
+
+        self._update_status(f"Fetching rows from HuggingFace ({fmt} format)")
+
+        all_text_parts: list[str] = []
+        offset = 0
+        rows_fetched = 0
+        page_size = 100
+
+        while rows_fetched < max_rows:
+            remaining = min(page_size, max_rows - rows_fetched)
+            result = await hf_service.stream_rows(
+                repo_id, config=config, split=split,
+                offset=offset, length=remaining,
+            )
+            rows = result.get("rows", [])
+            if not rows:
+                break
+
+            for row in rows:
+                text = self._extract_hf_row_text(row, fmt)
+                if text:
+                    all_text_parts.append(text)
+
+            rows_fetched += len(rows)
+            offset += len(rows)
+            self._update_status(
+                f"Fetched {rows_fetched} rows",
+                chunks_total=rows_fetched,
+            )
+
+            if len(rows) < remaining:
+                break
+
+        if not all_text_parts:
+            return {"job_id": None, "chunks_enqueued": 0, "rows_processed": 0}
+
+        content = "\n\n".join(all_text_parts)
+        source = f"HuggingFace: {repo_id}"
+        result = await self.ingest(
+            kb_id, content, source=source,
+            chunk_size=chunk_size, ai_titles=ai_titles,
+        )
+        result["rows_processed"] = rows_fetched
+        return result
+
+    @staticmethod
+    def _extract_hf_row_text(row: dict, fmt: str) -> str | None:
+        """Extract text content from a single HF dataset row."""
+        if fmt == "chat":
+            messages = row.get("messages") or row.get("conversations") or []
+            if not messages:
+                return None
+            parts = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if content:
+                    parts.append(f"{role}: {content}")
+            return "\n".join(parts) if parts else None
+
+        if fmt == "instruction":
+            instruction = row.get("instruction") or row.get("input") or row.get("prompt") or row.get("question") or ""
+            response = row.get("response") or row.get("output") or row.get("answer") or row.get("completion") or ""
+            if instruction or response:
+                return f"Instruction: {instruction}\n\nResponse: {response}"
+            return None
+
+        # text format or fallback
+        for col in ("text", "content", "document", "passage", "paragraph", "body"):
+            val = row.get(col)
+            if val and isinstance(val, str) and len(val.strip()) > 10:
+                return val.strip()
+
+        # Last resort: concatenate all string values
+        parts = [str(v) for v in row.values() if isinstance(v, str) and len(v) > 10]
+        return "\n".join(parts) if parts else None
+
     async def ingest_url(
         self, kb_id: str, url: str, deep: bool = False,
         limits: IngestLimits | None = None,

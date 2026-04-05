@@ -54,6 +54,10 @@ export default function KnowledgeBasePage() {
   const [rfcAnalysis, setRfcAnalysis] = useState(true);
   const [chunkSize, setChunkSize] = useState("medium");
   const [aiTitles, setAiTitles] = useState(false);
+  const [hfRepoId, setHfRepoId] = useState("");
+  const [hfSubset, setHfSubset] = useState("");
+  const [hfMaxRows, setHfMaxRows] = useState("500");
+  const [hfEnabled, setHfEnabled] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ name: string; content: string; sizeKB: number } | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<{
@@ -130,13 +134,14 @@ export default function KnowledgeBasePage() {
   useEffect(() => {
     loadKBs();
     api.get<{ id: string; name: string; provider_display_name: string }[]>("/providers/models/all").then(setModels).catch(() => {});
+    api.get<{ huggingface_enabled: boolean }>("/settings").then((s) => setHfEnabled(s.huggingface_enabled)).catch(() => {});
   }, []);
 
   const selectKB = async (kb: KB) => {
     setSelectedKB(kb); setSearchResults(null); setSearchQuery(""); setEditingKB(false);
     setEditName(kb.name); setEditDesc(kb.description); setEditModel(kb.ingest_model ?? "");
     // Clear ingest state
-    setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false); setAiDeepResearch(false); setRfcAnalysis(true);
+    setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false); setAiDeepResearch(false); setRfcAnalysis(true); setHfRepoId(""); setHfSubset(""); setHfMaxRows("500");
     // Stop any active polling and clear all ingest state
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
@@ -213,6 +218,19 @@ export default function KnowledgeBasePage() {
         ai_deep_research: aiDeepResearch, rfc_analysis: rfcAnalysis,
       });
       setIngestUrl(""); startPolling();
+    } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
+  };
+
+  const ingestFromHF = async () => {
+    if (!selectedKB || !hfRepoId.trim()) return;
+    setIngesting(true); setIngestResult("");
+    try {
+      await api.post(`/knowledge-bases/${selectedKB.id}/ingest-hf`, {
+        repo_id: hfRepoId.trim(), subset: hfSubset.trim() || undefined,
+        split: "train", max_rows: parseInt(hfMaxRows, 10) || 500,
+        chunk_size: chunkSize, ai_titles: aiTitles,
+      });
+      setHfRepoId(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
   };
 
@@ -480,6 +498,28 @@ export default function KnowledgeBasePage() {
                       </label>
                     </div>
                   </div>
+                  {/* HuggingFace Dataset */}
+                  {hfEnabled && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm text-matrix-text-dim">HuggingFace Dataset</h3>
+                      <div className="flex gap-2">
+                        <input value={hfRepoId} onChange={(e) => setHfRepoId(e.target.value)} placeholder="owner/dataset-name"
+                          className="flex-1 rounded-lg bg-matrix-input px-4 py-2.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                        <input value={hfSubset} onChange={(e) => setHfSubset(e.target.value)} placeholder="subset (optional)"
+                          className="w-40 rounded-lg bg-matrix-input px-3 py-2.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent" />
+                        <input type="number" value={hfMaxRows} onChange={(e) => setHfMaxRows(e.target.value)} min="1" max="10000"
+                          title="Max rows to import"
+                          className="w-24 rounded-lg bg-matrix-input px-3 py-2.5 text-sm text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent" />
+                        <button onClick={ingestFromHF} disabled={ingesting || !hfRepoId.trim()}
+                          className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+                          {ingesting ? "Working..." : "Import"}
+                        </button>
+                      </div>
+                      <p className="text-xs text-matrix-text-faint">
+                        Streams dataset rows and ingests as KB content. Supports text, chat, and instruction formats.
+                      </p>
+                    </div>
+                  )}
                   {/* File upload */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
