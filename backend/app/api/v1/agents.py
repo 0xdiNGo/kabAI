@@ -296,19 +296,25 @@ async def build_agent(
     llm_service: LLMService = Depends(get_llm_service),
 ):
     """Use AI to generate an agent profile from a description."""
-    model = await llm_service.resolve_model(None)
+    try:
+        model = await llm_service.resolve_model(None)
+    except Exception:
+        return {"error": "No default model configured. Set a system default model in Settings."}
     kwargs = await llm_service._get_model_kwargs(model)
 
-    response = await litellm.acompletion(
-        model=model,
-        messages=[
-            {"role": "system", "content": AGENT_BUILDER_PROMPT},
-            {"role": "user", "content": body.description},
-        ],
-        temperature=0.7,
-        max_tokens=1024,
-        **kwargs,
-    )
+    try:
+        response = await litellm.acompletion(
+            model=model,
+            messages=[
+                {"role": "system", "content": AGENT_BUILDER_PROMPT},
+                {"role": "user", "content": body.description},
+            ],
+            temperature=0.7,
+            max_tokens=1024,
+            **kwargs,
+        )
+    except Exception as e:
+        return {"error": f"LLM call failed: {e}"}
 
     raw = response.choices[0].message.content.strip()
     # Strip markdown fences if present
