@@ -44,6 +44,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
     volumes:
       - demo_qdrant_data:/qdrant/storage
     healthcheck:
