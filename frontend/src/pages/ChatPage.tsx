@@ -110,45 +110,38 @@ const IDLE_PHRASES = [
   "Catastrophic forgetting in 3... 2...",
 ];
 
-function ThinkingText({ phrases }: { phrases: string[] }) {
+function ThinkingText() {
   const [displayText, setDisplayText] = useState("");
   const [phase, setPhase] = useState<"typing" | "visible" | "fading">("typing");
   const [phraseIndex, setPhraseIndex] = useState(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Merge status phrases with idle phrases for variety
-  const allPhrases = useRef<string[]>([]);
-  useEffect(() => {
-    const idle = [...IDLE_PHRASES].sort(() => Math.random() - 0.5).slice(0, 20);
-    allPhrases.current = [...phrases, ...idle];
-    setPhraseIndex(0);
-    setDisplayText("");
-    setPhase("typing");
-  }, [phrases]);
+  // Shuffle all phrases once on mount
+  const shuffled = useRef<string[]>([]);
+  if (shuffled.current.length === 0) {
+    shuffled.current = [...IDLE_PHRASES].sort(() => Math.random() - 0.5);
+  }
 
   useEffect(() => {
-    const list = allPhrases.current;
+    const list = shuffled.current;
     if (list.length === 0) return;
     const target = list[phraseIndex % list.length] ?? "Thinking...";
 
     if (phase === "typing") {
-      // Type out character by character
       if (displayText.length < target.length) {
         timeoutRef.current = setTimeout(() => {
           setDisplayText(target.slice(0, displayText.length + 1));
         }, 18);
       } else {
-        // Done typing, hold for a moment
         setPhase("visible");
-        timeoutRef.current = setTimeout(() => setPhase("fading"), 2000);
+        timeoutRef.current = setTimeout(() => setPhase("fading"), 1800);
       }
     } else if (phase === "fading") {
-      // Wait for fade-out CSS transition, then advance
       timeoutRef.current = setTimeout(() => {
         setPhraseIndex((i) => i + 1);
         setDisplayText("");
         setPhase("typing");
-      }, 500);
+      }, 400);
     }
 
     return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
@@ -186,7 +179,6 @@ export default function ChatPage() {
   const [webSearch, setWebSearch] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");
-  const [thinkingPhrases, setThinkingPhrases] = useState<string[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [title, setTitle] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<{
@@ -281,7 +273,7 @@ export default function ChatPage() {
         if (status === "processing") {
           setIsStreaming(true);
           setIsThinking(true);
-          setThinkingPhrases(["Reconnecting...", "Processing in background..."]);
+          // thinking text rotates automatically
 
           // Reconnect to the event stream
           abortRef.current = streamPost(
@@ -372,22 +364,6 @@ export default function ChatPage() {
         setIsStreaming(true);
         updateCurrentAgent({ id: event.agent_id, name: event.agent_name });
         setIsThinking(true);
-        setThinkingPhrases([`${event.agent_name} is thinking...`]);
-      } else if (event.type === "status") {
-        const phrase =
-          event.status === "thinking"
-            ? event.agent_name ? `${event.agent_name} is thinking...` : "Thinking..."
-            : event.status === "connecting"
-              ? `Connecting to ${event.model ?? "model"}...`
-              : event.status === "generating"
-                ? "Generating response..."
-                : event.status === "searching"
-                  ? `Searching the web: "${event.query ?? "..."}"`
-                  : "Processing...";
-        setThinkingPhrases((prev) => {
-          if (prev.includes(phrase)) return prev;
-          return [...prev, phrase];
-        });
       } else if (event.type === "token") {
         setIsThinking(false);
         setStreamContent((prev) => prev + event.content);
@@ -556,8 +532,6 @@ export default function ChatPage() {
     setStreamContent("");
     updateCurrentAgent(null);
     setIsThinking(true);
-    setThinkingPhrases(["Thinking..."]);
-
     abortRef.current = streamPost(
       `/api/v1/conversations/${conversationId}/messages/stream`,
       { content: input, web_search: webSearch },
@@ -712,7 +686,7 @@ export default function ChatPage() {
                     <span className="h-2 w-2 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
                     <span className="h-2 w-2 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
-                  <ThinkingText phrases={thinkingPhrases} />
+                  <ThinkingText />
                 </div>
               </div>
             </div>
