@@ -52,10 +52,11 @@ class IngestLimits:
 
 
 class KnowledgeService:
-    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService, queue_repo=None):
+    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService, queue_repo=None, vector_service=None):
         self.repo = knowledge_repo
         self.llm_service = llm_service
         self._queue_repo = queue_repo
+        self.vector_service = vector_service
         # Status callback set by the API layer for background ingests
         self._status_callback = None
 
@@ -650,10 +651,62 @@ class KnowledgeService:
     async def retrieve(
         self, query: str, kb_ids: list[str], limit: int = 15
     ) -> list[KnowledgeItem]:
-        """Retrieve the most relevant knowledge items for a query."""
-        items = await self.repo.search(query, kb_ids, limit)
+        """Hybrid retrieval: vector search + keyword search, merged by score."""
+        # 1. Vector search (if configured)
+        vector_ids_scores: dict[str, float] = {}
+        if self.vector_service:
+            try:
+                query_embedding = await self.vector_service.generate_embedding(query)
+                if query_embedding:
+                    vresults = await self.vector_service.search(query_embedding, kb_ids, limit)
+                    for r in vresults:
+                        vector_ids_scores[r["id"]] = r["score"]
+            except Exception as e:
+                logger.warning("Vector search failed, falling back to text-only: %s", e)
+
+        # 2. Text search (always)
+        text_results = await self.repo.search(query, kb_ids, limit)
+
+        # 3. If no vector results, just return text results
+        if not vector_ids_scores:
+            logger.info(
+                "KB retrieval (text-only): query=%r kb_ids=%s returned=%d",
+                query[:80], kb_ids, len(text_results),
+            )
+            return text_results
+
+        # 4. Fetch full items for vector results not already in text results
+        text_ids = {item.id for item in text_results}
+        missing_ids = [vid for vid in vector_ids_scores if vid not in text_ids]
+        vector_items: list[KnowledgeItem] = []
+        if missing_ids:
+            vector_items = await self.repo.find_items_by_ids(missing_ids)
+
+        # 5. Score fusion — normalize and combine
+        # Normalize text scores to 0-1 (text scores vary widely)
+        all_items: dict[str, KnowledgeItem] = {}
+        text_scores: dict[str, float] = {}
+        max_text_score = 1.0
+        for i, item in enumerate(text_results):
+            all_items[item.id] = item
+            # Approximate rank-based score (first = 1.0, last = ~0.3)
+            text_scores[item.id] = 1.0 - (i * 0.7 / max(len(text_results) - 1, 1))
+
+        for item in vector_items:
+            all_items[item.id] = item
+
+        # Weighted fusion: 0.7 vector + 0.3 text
+        fused: list[tuple[float, str]] = []
+        for item_id, item in all_items.items():
+            v_score = vector_ids_scores.get(item_id, 0.0) * 0.7
+            t_score = text_scores.get(item_id, 0.0) * 0.3
+            fused.append((v_score + t_score, item_id))
+
+        fused.sort(reverse=True)
+        result = [all_items[item_id] for _, item_id in fused[:limit]]
+
         logger.info(
-            "KB retrieval: query=%r kb_ids=%s returned=%d items",
-            query[:80], kb_ids, len(items),
+            "KB retrieval (hybrid): query=%r kb_ids=%s vector=%d text=%d merged=%d",
+            query[:80], kb_ids, len(vector_ids_scores), len(text_results), len(result),
         )
-        return items
+        return result

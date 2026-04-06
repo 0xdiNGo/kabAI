@@ -23,6 +23,7 @@ class SettingsResponse(BaseModel):
     ingest_max_urls: int
     huggingface_enabled: bool
     huggingface_has_token: bool
+    embedding_model: str | None
 
 
 class SettingsUpdate(BaseModel):
@@ -34,6 +35,7 @@ class SettingsUpdate(BaseModel):
     ingest_max_urls: int | None = None
     huggingface_enabled: bool | None = None
     huggingface_token: str | None = None
+    embedding_model: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -51,6 +53,7 @@ async def get_settings(
         ingest_max_urls=settings.ingest_max_urls,
         huggingface_enabled=settings.huggingface_enabled,
         huggingface_has_token=settings.huggingface_token_encrypted is not None,
+        embedding_model=settings.embedding_model,
     )
 
 
@@ -63,7 +66,7 @@ async def update_settings(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     # Allow explicitly setting nullable fields to null
     raw = body.model_dump(exclude_unset=False)
-    for field in ("default_model", "default_ingest_model"):
+    for field in ("default_model", "default_ingest_model", "embedding_model"):
         if field in raw:
             updates[field] = raw[field]
     # Encrypt HF token before storage

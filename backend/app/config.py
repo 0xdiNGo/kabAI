@@ -34,5 +34,8 @@ class Settings(BaseSettings):
     # Ollama
     ollama_api_base: str = "http://localhost:11434"
 
+    # Qdrant (vector search)
+    qdrant_url: str = "http://localhost:6333"
+
 
 settings = Settings()

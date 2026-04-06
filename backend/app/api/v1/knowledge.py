@@ -316,10 +316,15 @@ async def update_knowledge_base(
 @router.delete("/{kb_id}", response_model=dict)
 async def delete_knowledge_base(
     kb_id: str,
+    request: Request,
     _admin=Depends(require_admin),
     repo: KnowledgeRepository = Depends(get_knowledge_repo),
 ):
     await repo.delete_base(kb_id)
+    # Clean up vectors from Qdrant
+    vector_svc = getattr(request.app.state, "vector_service", None)
+    if vector_svc:
+        await vector_svc.delete_by_kb(kb_id)
     return {"message": "Knowledge base deleted"}
 
 

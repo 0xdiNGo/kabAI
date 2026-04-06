@@ -51,6 +51,8 @@ export default function ProvidersPage() {
   const [editMaxBg, setEditMaxBg] = useState("5");
   const [defaultIngestModel, setDefaultIngestModel] = useState<string | null>(null);
   const [selectedIngestDefault, setSelectedIngestDefault] = useState("");
+  const [embeddingModel, setEmbeddingModel] = useState<string | null>(null);
+  const [selectedEmbedding, setSelectedEmbedding] = useState("");
   const [maxRounds, setMaxRounds] = useState(3);
   const [editMaxRounds, setEditMaxRounds] = useState("3");
   const [ingestMaxItems, setIngestMaxItems] = useState(200);
@@ -83,6 +85,7 @@ export default function ProvidersPage() {
   const loadSettings = () => {
     api.get<{
       default_model: string | null; default_ingest_model: string | null;
+      embedding_model: string | null;
       max_background_chats: number; roundtable_max_rounds: number;
       ingest_max_items: number; ingest_max_urls: number;
       huggingface_enabled: boolean; huggingface_has_token: boolean;
@@ -91,6 +94,8 @@ export default function ProvidersPage() {
       setSelectedDefault(s.default_model ?? "");
       setDefaultIngestModel(s.default_ingest_model);
       setSelectedIngestDefault(s.default_ingest_model ?? "");
+      setEmbeddingModel(s.embedding_model);
+      setSelectedEmbedding(s.embedding_model ?? "");
       setMaxBackgroundChats(s.max_background_chats);
       setEditMaxBg(String(s.max_background_chats));
       setMaxRounds(s.roundtable_max_rounds);
@@ -125,6 +130,11 @@ export default function ProvidersPage() {
   const saveIngestDefault = async () => {
     await api.put("/settings", { default_ingest_model: selectedIngestDefault || null });
     setDefaultIngestModel(selectedIngestDefault || null);
+  };
+
+  const saveEmbeddingModel = async () => {
+    await api.put("/settings", { embedding_model: selectedEmbedding || null });
+    setEmbeddingModel(selectedEmbedding || null);
   };
 
   const saveIngestLimits = async () => {
@@ -284,6 +294,40 @@ export default function ProvidersPage() {
             Save
           </button>
         </div>
+      </div>
+
+      {/* Embedding Model (Vector Search) */}
+      <div className="mb-6 rounded-xl bg-matrix-card p-5">
+        <h2 className="font-semibold mb-3">Embedding Model (Vector Search)</h2>
+        <p className="text-sm text-matrix-text-dim mb-3">
+          Model for generating embeddings during ingestion and retrieval. Enables semantic search alongside keyword search. Leave empty for keyword-only.
+        </p>
+        <div className="flex gap-3">
+          <select
+            value={selectedEmbedding}
+            onChange={(e) => setSelectedEmbedding(e.target.value)}
+            className="flex-1 rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+          >
+            <option value="">None (keyword search only)</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.provider_display_name})
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={saveEmbeddingModel}
+            disabled={selectedEmbedding === (embeddingModel ?? "")}
+            className="rounded-lg bg-matrix-accent px-4 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Save
+          </button>
+        </div>
+        {embeddingModel && (
+          <p className="mt-2 text-sm text-matrix-text-faint">
+            Current: <span className="text-matrix-text">{embeddingModel}</span>
+          </p>
+        )}
       </div>
 
       {/* Ingest Limits */}

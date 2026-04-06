@@ -134,12 +134,12 @@ class KnowledgeRepository:
         result = await self.items.insert_one(doc)
         return str(result.inserted_id)
 
-    async def add_items_bulk(self, items: list[KnowledgeItem]) -> int:
+    async def add_items_bulk(self, items: list[KnowledgeItem]) -> list[str]:
         if not items:
-            return 0
+            return []
         docs = [item.model_dump(by_alias=True, exclude={"id"}) for item in items]
         result = await self.items.insert_many(docs)
-        return len(result.inserted_ids)
+        return [str(oid) for oid in result.inserted_ids]
 
     async def find_items_by_base(
         self, kb_id: str, limit: int = 100, offset: int = 0
@@ -159,6 +159,16 @@ class KnowledgeRepository:
     async def find_all_items_by_base(self, kb_id: str) -> list[KnowledgeItem]:
         items = []
         async for doc in self.items.find({"knowledge_base_id": kb_id}).sort("chunk_index", 1):
+            doc["_id"] = str(doc["_id"])
+            items.append(KnowledgeItem(**doc))
+        return items
+
+    async def find_items_by_ids(self, item_ids: list[str]) -> list[KnowledgeItem]:
+        if not item_ids:
+            return []
+        object_ids = [ObjectId(iid) for iid in item_ids]
+        items = []
+        async for doc in self.items.find({"_id": {"$in": object_ids}}):
             doc["_id"] = str(doc["_id"])
             items.append(KnowledgeItem(**doc))
         return items

@@ -17,6 +17,7 @@ from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.exemplar_service import ExemplarService
 from app.services.huggingface_service import HuggingFaceService
+from app.services.vector_service import VectorService
 from app.services.search_service import SearchService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
@@ -97,12 +98,23 @@ def get_llm_service(
     return LLMService(provider_service, settings_repo)
 
 
+def get_vector_service(
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
+    llm_service: LLMService = Depends(get_llm_service),
+):
+    from app.core.qdrant import qdrant_conn
+    if qdrant_conn.client:
+        return VectorService(qdrant_conn.client, llm_service, settings_repo)
+    return None
+
+
 def get_knowledge_service(
     knowledge_repo: KnowledgeRepository = Depends(get_knowledge_repo),
     llm_service: LLMService = Depends(get_llm_service),
     queue_repo: IngestQueueRepository = Depends(get_ingest_queue_repo),
+    vector_service: VectorService | None = Depends(get_vector_service),
 ):
-    return KnowledgeService(knowledge_repo, llm_service, queue_repo)
+    return KnowledgeService(knowledge_repo, llm_service, queue_repo, vector_service)
 
 
 def get_exemplar_service(

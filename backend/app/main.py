@@ -8,6 +8,7 @@ from app.api.v1.router import router as v1_router
 from app.config import settings
 from app.core.database import db
 from app.core.exceptions import TigerTeamError
+from app.core.qdrant import qdrant_conn
 from app.core.redis import redis_client
 from app.repositories.exemplar_repo import ExemplarRepository
 from app.repositories.ingest_queue_repo import IngestQueueRepository
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     # Startup
     await db.connect(settings.mongodb_url, settings.mongodb_db_name)
     await redis_client.connect(settings.redis_url)
+    await qdrant_conn.connect(settings.qdrant_url)
     app.state.background_manager = BackgroundTaskManager()
     app.state.ingest_manager = IngestManager()
     # Ensure indexes
@@ -41,13 +43,17 @@ async def lifespan(app: FastAPI):
     from app.repositories.settings_repo import SettingsRepository
     from app.services.llm_service import LLMService
     from app.services.provider_service import ProviderService
+    from app.services.vector_service import VectorService
 
     provider_repo = ProviderRepository(db.db)
     settings_repo_inst = SettingsRepository(db.db)
     provider_service = ProviderService(provider_repo, redis_client.client)
     llm_service = LLMService(provider_service, settings_repo_inst)
 
-    worker = IngestWorker(queue_repo, knowledge_repo, llm_service)
+    vector_service = VectorService(qdrant_conn.client, llm_service, settings_repo_inst)
+    app.state.vector_service = vector_service
+
+    worker = IngestWorker(queue_repo, knowledge_repo, llm_service, vector_service)
     app.state.ingest_worker = worker
     app.state.ingest_queue_repo = queue_repo
     await worker.start()
@@ -56,6 +62,7 @@ async def lifespan(app: FastAPI):
     await app.state.ingest_worker.stop()
     await app.state.ingest_manager.shutdown()
     await app.state.background_manager.shutdown()
+    await qdrant_conn.disconnect()
     await redis_client.disconnect()
     await db.disconnect()
 

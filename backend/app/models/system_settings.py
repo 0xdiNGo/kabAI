@@ -13,4 +13,5 @@ class SystemSettings(BaseModel):
     ingest_max_urls: int = 10
     huggingface_enabled: bool = False
     huggingface_token_encrypted: str | None = None
+    embedding_model: str | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

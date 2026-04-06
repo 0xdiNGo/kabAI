@@ -31,10 +31,12 @@ class IngestWorker:
         queue_repo: IngestQueueRepository,
         knowledge_repo: KnowledgeRepository,
         llm_service,
+        vector_service=None,
     ):
         self.queue_repo = queue_repo
         self.knowledge_repo = knowledge_repo
         self.llm_service = llm_service
+        self.vector_service = vector_service
         self._running = False
         self._task: asyncio.Task | None = None
         self._items_since_count_update: dict[str, int] = {}  # kb_id → count
@@ -120,8 +122,13 @@ class IngestWorker:
             ))
 
         # Bulk insert all KnowledgeItems at once
+        inserted_ids = []
         if knowledge_items:
-            await self.knowledge_repo.add_items_bulk(knowledge_items)
+            inserted_ids = await self.knowledge_repo.add_items_bulk(knowledge_items)
+
+        # Generate embeddings and upsert to vector DB
+        if inserted_ids and self.vector_service:
+            await self._embed_and_upsert(knowledge_items, inserted_ids)
 
         # Bulk mark queue items as done
         await self.queue_repo.mark_done_bulk([item.id for item in items])
@@ -190,8 +197,12 @@ class IngestWorker:
             source=item.source,
             chunk_index=item.chunk_index,
         )
-        await self.knowledge_repo.add_item(ki)
+        item_id = await self.knowledge_repo.add_item(ki)
         await self.queue_repo.mark_done(item.id, title, tokens)
+
+        # Generate embedding and upsert to vector DB
+        if self.vector_service:
+            await self._embed_and_upsert([ki], [item_id])
 
     async def _maybe_update_counts(self) -> None:
         """Update KB item counts periodically, not per-item."""
@@ -243,6 +254,29 @@ class IngestWorker:
                         return line[:idx + len(end)].strip()
                 return line[:100].strip()
         return content[:80].strip() or "Untitled"
+
+    async def _embed_and_upsert(
+        self, knowledge_items: list, item_ids: list[str]
+    ) -> None:
+        """Generate embeddings and upsert to vector DB. Failures are logged, not raised."""
+        try:
+            texts = [ki.content for ki in knowledge_items]
+            embeddings = await self.vector_service.generate_embeddings_batch(texts)
+
+            vector_items = []
+            for ki, item_id, emb in zip(knowledge_items, item_ids, embeddings):
+                if emb:
+                    vector_items.append({
+                        "id": item_id,
+                        "vector": emb,
+                        "kb_id": ki.knowledge_base_id,
+                        "title": ki.title,
+                    })
+
+            if vector_items:
+                await self.vector_service.upsert_items(vector_items)
+        except Exception as e:
+            logger.warning("Vector embedding/upsert failed (non-fatal): %s", e)
 
     async def _resolve_model(self, kb_id: str) -> str:
         kb = await self.knowledge_repo.find_base_by_id(kb_id)
