@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import AppRoutes from "@/routes";
+import ToastContainer from "@/components/Toast";
 
 export default function App() {
   const { isAuthenticated, fetchUser } = useAuthStore();
@@ -11,5 +12,10 @@ export default function App() {
     }
   }, [isAuthenticated, fetchUser]);
 
-  return <AppRoutes />;
+  return (
+    <>
+      <AppRoutes />
+      <ToastContainer />
+    </>
+  );
 }

@@ -222,6 +222,7 @@ export default function AgentsPage() {
     if (!builderInput.trim()) return;
     setBuilding(true);
     setBuilderResult(null);
+    setError("");
     try {
       const res = await api.post<{ profile?: Record<string, unknown>; error?: string }>("/agents/build", {
         description: builderInput,
@@ -409,6 +410,13 @@ export default function AgentsPage() {
                 Cancel
               </button>
             </div>
+
+            {/* Builder Error */}
+            {error && !builderResult && (
+              <div className="rounded-lg bg-matrix-red/10 border border-matrix-red/30 px-4 py-3">
+                <p className="text-sm text-matrix-red">{error}</p>
+              </div>
+            )}
 
             {/* Builder Result Preview */}
             {builderResult && (

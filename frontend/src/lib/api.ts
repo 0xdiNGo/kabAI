@@ -1,4 +1,9 @@
+import { toastError } from "@/components/Toast";
+
 const API_BASE = "/api/v1";
+
+// Paths where errors are handled by the caller (don't double-toast)
+const SILENT_PATHS = ["/auth/login", "/auth/register", "/auth/refresh"];
 
 class ApiError extends Error {
   constructor(
@@ -82,7 +87,12 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(res.status, body.detail ?? "Request failed");
+    const detail = body.detail ?? "Request failed";
+    // Show toast for server errors unless the caller handles it
+    if (!SILENT_PATHS.some((p) => path.startsWith(p))) {
+      toastError(detail);
+    }
+    throw new ApiError(res.status, detail);
   }
 
   return res.json() as Promise<T>;
