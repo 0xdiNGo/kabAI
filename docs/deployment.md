@@ -190,7 +190,7 @@ The demo stack is close to production-ready but has these gaps:
 ### Database
 
 - Run MongoDB as a replica set for durability (single-node demo has no replication)
-- Enable MongoDB authentication (`MONGODB_URL=mongodb://user:pass@host:27017/tiger_team?authSource=admin`)
+- Enable MongoDB authentication (`MONGODB_URL=mongodb://user:pass@host:27017/kabai?authSource=admin`)
 - Set up automated backups
 - Add Redis persistence configuration or use a managed Redis
 

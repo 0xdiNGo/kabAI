@@ -206,18 +206,18 @@ No API endpoint exists for role changes. Use MongoDB directly:
 ```bash
 # Demo stack
 docker compose -f docker-compose.demo.yml exec mongodb \
-  mongosh tiger_team --eval 'db.users.updateOne({username:"newuser"},{$set:{role:"admin"}})'
+  mongosh kabai --eval 'db.users.updateOne({username:"newuser"},{$set:{role:"admin"}})'
 
 # Dev stack
 docker compose exec mongodb \
-  mongosh tiger_team --eval 'db.users.updateOne({username:"newuser"},{$set:{role:"admin"}})'
+  mongosh kabai --eval 'db.users.updateOne({username:"newuser"},{$set:{role:"admin"}})'
 ```
 
 ### List all users (MongoDB shell)
 
 ```bash
 docker compose -f docker-compose.demo.yml exec mongodb \
-  mongosh tiger_team --eval 'db.users.find({},{password_hash:0}).toArray()'
+  mongosh kabai --eval 'db.users.find({},{password_hash:0}).toArray()'
 ```
 
 ---
@@ -228,10 +228,10 @@ docker compose -f docker-compose.demo.yml exec mongodb \
 
 ```bash
 # Demo stack
-docker compose -f docker-compose.demo.yml exec mongodb mongosh tiger_team
+docker compose -f docker-compose.demo.yml exec mongodb mongosh kabai
 
 # Dev stack
-docker compose exec mongodb mongosh tiger_team
+docker compose exec mongodb mongosh kabai
 ```
 
 ### Useful queries
@@ -261,7 +261,7 @@ db.providers.find({}, {name: 1, provider_type: 1, api_base: 1, is_enabled: 1})
 
 ```bash
 docker compose -f docker-compose.demo.yml exec mongodb \
-  mongodump --db tiger_team --archive=/tmp/backup.archive
+  mongodump --db kabai --archive=/tmp/backup.archive
 
 docker compose -f docker-compose.demo.yml cp mongodb:/tmp/backup.archive ./backup.archive
 ```
@@ -272,7 +272,7 @@ docker compose -f docker-compose.demo.yml cp mongodb:/tmp/backup.archive ./backu
 docker compose -f docker-compose.demo.yml cp ./backup.archive mongodb:/tmp/backup.archive
 
 docker compose -f docker-compose.demo.yml exec mongodb \
-  mongorestore --db tiger_team --archive=/tmp/backup.archive --drop
+  mongorestore --db kabai --archive=/tmp/backup.archive --drop
 ```
 
 ### Clear Redis cache
@@ -344,7 +344,7 @@ docker compose -f docker-compose.demo.yml exec backend \
 
 # Update the user (replace HASH with the output above)
 docker compose -f docker-compose.demo.yml exec mongodb \
-  mongosh tiger_team --eval 'db.users.updateOne({username:"admin"},{$set:{password_hash:"HASH"}})'
+  mongosh kabai --eval 'db.users.updateOne({username:"admin"},{$set:{password_hash:"HASH"}})'
 ```
 
 ### Reset everything

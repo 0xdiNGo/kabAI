@@ -12,8 +12,8 @@
 ### 1. Clone and install dependencies
 
 ```bash
-git clone <repo-url> tiger-team
-cd tiger-team
+git clone <repo-url> kabai
+cd kabai
 make install
 ```
 
@@ -73,7 +73,7 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 Note: The first user does not automatically get admin role. To promote a user to admin, update MongoDB directly:
 
 ```bash
-docker compose exec mongodb mongosh tiger_team \
+docker compose exec mongodb mongosh kabai \
   --eval 'db.users.updateOne({username:"admin"},{$set:{role:"admin"}})'
 ```
 

@@ -31,7 +31,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="w-full max-w-md space-y-6 rounded-xl bg-matrix-card p-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold">Tiger Team</h1>
+          <h1 className="text-3xl font-bold">kabAI</h1>
           <p className="mt-2 text-matrix-text-dim">
             {isRegister ? "Create an account" : "Sign in to continue"}
           </p>

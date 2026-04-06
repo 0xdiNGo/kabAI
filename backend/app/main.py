@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.router import router as v1_router
 from app.config import settings
 from app.core.database import db
-from app.core.exceptions import TigerTeamError
+from app.core.exceptions import KabAIError
 from app.core.qdrant import qdrant_conn
 from app.core.redis import redis_client
 from app.repositories.exemplar_repo import ExemplarRepository
@@ -87,8 +87,8 @@ app.include_router(v1_router)
 
 
 # Global exception handler
-@app.exception_handler(TigerTeamError)
-async def tiger_team_error_handler(request: Request, exc: TigerTeamError):
+@app.exception_handler(KabAIError)
+async def kabai_error_handler(request: Request, exc: KabAIError):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 

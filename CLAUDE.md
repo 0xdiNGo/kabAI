@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Tiger Team is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus. The platform also includes a knowledge base system for ingesting and organizing reference material (text, URLs, files, RFCs) that agents can draw on.
+kabAI is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus. The platform also includes a knowledge base system for ingesting and organizing reference material (text, URLs, files, RFCs) that agents can draw on.
 
 ## Tech Stack
 
