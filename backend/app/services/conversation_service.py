@@ -63,12 +63,57 @@ class ConversationService:
         pairs = await self.exemplar_service.retrieve(query, agent.exemplar_set_ids)
         return pairs if pairs else None
 
-    async def _retrieve_context(self, agent, query: str):
-        """Retrieve knowledge base context for an agent if it has KBs assigned."""
+    async def _retrieve_context(self, agent, query: str, history: list[dict] | None = None):
+        """Retrieve knowledge base context using conversation-aware search.
+
+        Builds a richer search query from the current message + recent conversation
+        context, so follow-up questions like "tell me more about that" resolve
+        correctly against the knowledge base.
+        """
         if not agent or not getattr(agent, "knowledge_base_ids", None):
             return None
-        items = await self.knowledge_service.retrieve(query, agent.knowledge_base_ids)
+
+        # Build a search query that includes conversation context
+        search_query = self._build_search_query(query, history)
+
+        items = await self.knowledge_service.retrieve(
+            search_query, agent.knowledge_base_ids
+        )
         return items if items else None
+
+    @staticmethod
+    def _build_search_query(current_message: str, history: list[dict] | None) -> str:
+        """Build a search query enriched with recent conversation context.
+
+        For the first message, returns the message as-is.
+        For follow-ups, prepends key terms from the last few exchanges
+        so pronoun references ("that", "it", "this approach") resolve
+        against the knowledge base.
+        """
+        if not history:
+            return current_message
+
+        # Take the last 3 exchanges (6 messages) for context
+        recent = history[-6:]
+        # Extract the most recent user and assistant messages
+        context_parts = []
+        for msg in recent:
+            if msg["role"] in ("user", "assistant"):
+                # Take first 200 chars of each message for key terms
+                text = msg["content"][:200].strip()
+                if text:
+                    context_parts.append(text)
+
+        if not context_parts:
+            return current_message
+
+        # Combine: recent context (compressed) + current question (full)
+        context_summary = " ".join(context_parts)
+        # Limit context to avoid overwhelming the search
+        if len(context_summary) > 500:
+            context_summary = context_summary[:500]
+
+        return f"{current_message} {context_summary}"
 
     async def send_message(
         self, conversation_id: str, user_id: str, content: str
@@ -90,14 +135,16 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
+        # Build message history
+        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+
         # Retrieve knowledge base context and exemplars in parallel
+        # Pass conversation history so follow-up questions resolve correctly
         context, exemplars = await asyncio.gather(
-            self._retrieve_context(agent, content),
+            self._retrieve_context(agent, content, messages),
             self._retrieve_exemplars(agent, content),
         )
 
-        # Build message history
-        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
         messages.append({"role": "user", "content": content})
 
         # Get LLM response
@@ -144,14 +191,16 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
+        # Build message history
+        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+
         # Retrieve knowledge base context and exemplars in parallel
+        # Pass conversation history so follow-up questions resolve correctly
         context, exemplars = await asyncio.gather(
-            self._retrieve_context(agent, content),
+            self._retrieve_context(agent, content, messages),
             self._retrieve_exemplars(agent, content),
         )
 
-        # Build message history
-        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
         messages.append({"role": "user", "content": content})
 
         # Determine if search should be enabled

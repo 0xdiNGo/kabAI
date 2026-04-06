@@ -649,64 +649,110 @@ class KnowledgeService:
     # --- Retrieval ---
 
     async def retrieve(
-        self, query: str, kb_ids: list[str], limit: int = 15
+        self, query: str, kb_ids: list[str], limit: int = 20
     ) -> list[KnowledgeItem]:
-        """Hybrid retrieval: vector search + keyword search, merged by score."""
-        # 1. Vector search (if configured)
-        vector_ids_scores: dict[str, float] = {}
-        if self.vector_service:
-            try:
-                query_embedding = await self.vector_service.generate_embedding(query)
-                if query_embedding:
-                    vresults = await self.vector_service.search(query_embedding, kb_ids, limit)
-                    for r in vresults:
-                        vector_ids_scores[r["id"]] = r["score"]
-            except Exception as e:
-                logger.warning("Vector search failed, falling back to text-only: %s", e)
+        """Multi-strategy hybrid retrieval for maximum recall.
 
-        # 2. Text search (always)
-        text_results = await self.repo.search(query, kb_ids, limit)
+        Runs up to 3 search strategies in parallel:
+        1. Vector similarity search (semantic matching via Qdrant)
+        2. Full-text keyword search (MongoDB $text)
+        3. Keyword search with extracted key terms (strips filler words)
 
-        # 3. If no vector results, just return text results
-        if not vector_ids_scores:
-            logger.info(
-                "KB retrieval (text-only): query=%r kb_ids=%s returned=%d",
-                query[:80], kb_ids, len(text_results),
-            )
-            return text_results
+        Results are deduplicated and merged using weighted score fusion.
+        """
+        # Extract key terms for a supplementary keyword search
+        key_terms = self._extract_key_terms(query)
 
-        # 4. Fetch full items for vector results not already in text results
-        text_ids = {item.id for item in text_results}
-        missing_ids = [vid for vid in vector_ids_scores if vid not in text_ids]
-        vector_items: list[KnowledgeItem] = []
-        if missing_ids:
-            vector_items = await self.repo.find_items_by_ids(missing_ids)
+        # Run all searches in parallel
+        vector_task = self._vector_search(query, kb_ids, limit)
+        text_task = self.repo.search(query, kb_ids, limit)
+        # Only run key-terms search if it differs meaningfully from the raw query
+        async def _empty():
+            return []
+        terms_task = (
+            self.repo.search(key_terms, kb_ids, limit)
+            if key_terms and key_terms != query.strip()
+            else _empty()
+        )
 
-        # 5. Score fusion — normalize and combine
-        # Normalize text scores to 0-1 (text scores vary widely)
+        vector_ids_scores, text_results, terms_results = await asyncio.gather(
+            vector_task, text_task, terms_task,
+        )
+
+        # Build unified item map and score each result
         all_items: dict[str, KnowledgeItem] = {}
-        text_scores: dict[str, float] = {}
-        max_text_score = 1.0
+        scores: dict[str, float] = {}
+
+        # Score text results (rank-based, 0.3 weight)
         for i, item in enumerate(text_results):
             all_items[item.id] = item
-            # Approximate rank-based score (first = 1.0, last = ~0.3)
-            text_scores[item.id] = 1.0 - (i * 0.7 / max(len(text_results) - 1, 1))
+            rank_score = 1.0 - (i * 0.7 / max(len(text_results) - 1, 1))
+            scores[item.id] = scores.get(item.id, 0.0) + rank_score * 0.3
 
-        for item in vector_items:
+        # Score terms results (rank-based, 0.15 weight — supplementary)
+        for i, item in enumerate(terms_results):
             all_items[item.id] = item
+            rank_score = 1.0 - (i * 0.7 / max(len(terms_results) - 1, 1))
+            scores[item.id] = scores.get(item.id, 0.0) + rank_score * 0.15
 
-        # Weighted fusion: 0.7 vector + 0.3 text
-        fused: list[tuple[float, str]] = []
-        for item_id, item in all_items.items():
-            v_score = vector_ids_scores.get(item_id, 0.0) * 0.7
-            t_score = text_scores.get(item_id, 0.0) * 0.3
-            fused.append((v_score + t_score, item_id))
+        # Score vector results (similarity, 0.55 weight)
+        if vector_ids_scores:
+            missing_ids = [vid for vid in vector_ids_scores if vid not in all_items]
+            if missing_ids:
+                vector_items = await self.repo.find_items_by_ids(missing_ids)
+                for item in vector_items:
+                    all_items[item.id] = item
+            for item_id, vscore in vector_ids_scores.items():
+                scores[item_id] = scores.get(item_id, 0.0) + vscore * 0.55
 
-        fused.sort(reverse=True)
-        result = [all_items[item_id] for _, item_id in fused[:limit]]
+        # Sort by fused score and return top results
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        result = [all_items[item_id] for item_id, _ in ranked[:limit] if item_id in all_items]
 
         logger.info(
-            "KB retrieval (hybrid): query=%r kb_ids=%s vector=%d text=%d merged=%d",
-            query[:80], kb_ids, len(vector_ids_scores), len(text_results), len(result),
+            "KB retrieval: query=%r vector=%d text=%d terms=%d merged=%d",
+            query[:60], len(vector_ids_scores), len(text_results),
+            len(terms_results), len(result),
         )
         return result
+
+    async def _vector_search(
+        self, query: str, kb_ids: list[str], limit: int
+    ) -> dict[str, float]:
+        """Run vector similarity search. Returns {item_id: score} or empty dict."""
+        if not self.vector_service:
+            return {}
+        try:
+            query_embedding = await self.vector_service.generate_embedding(query)
+            if query_embedding:
+                results = await self.vector_service.search(query_embedding, kb_ids, limit)
+                return {r["id"]: r["score"] for r in results}
+        except Exception as e:
+            logger.warning("Vector search failed: %s", e)
+        return {}
+
+    @staticmethod
+    def _extract_key_terms(query: str) -> str:
+        """Extract key terms from a query by stripping common filler words.
+
+        This gives MongoDB text search a better chance of matching when
+        the original query is conversational ("can you tell me about...").
+        """
+        stop_words = {
+            "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+            "on", "with", "at", "by", "from", "as", "into", "about", "like",
+            "through", "after", "over", "between", "out", "against", "during",
+            "without", "before", "under", "around", "among", "it", "its",
+            "this", "that", "these", "those", "i", "me", "my", "we", "our",
+            "you", "your", "he", "she", "they", "them", "their", "what",
+            "which", "who", "whom", "how", "when", "where", "why",
+            "not", "no", "nor", "but", "or", "and", "if", "then", "so",
+            "just", "also", "very", "really", "please", "tell", "know",
+            "think", "get", "make", "go", "see", "look", "find", "give",
+            "more", "some", "any", "all", "each", "every", "both",
+        }
+        words = re.findall(r'\b\w+\b', query.lower())
+        key = [w for w in words if w not in stop_words and len(w) > 2]
+        return " ".join(key) if key else ""
