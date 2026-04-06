@@ -648,7 +648,12 @@ class KnowledgeService:
     # --- Retrieval ---
 
     async def retrieve(
-        self, query: str, kb_ids: list[str], limit: int = 5
+        self, query: str, kb_ids: list[str], limit: int = 15
     ) -> list[KnowledgeItem]:
         """Retrieve the most relevant knowledge items for a query."""
-        return await self.repo.search(query, kb_ids, limit)
+        items = await self.repo.search(query, kb_ids, limit)
+        logger.info(
+            "KB retrieval: query=%r kb_ids=%s returned=%d items",
+            query[:80], kb_ids, len(items),
+        )
+        return items

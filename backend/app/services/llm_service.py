@@ -296,8 +296,9 @@ class LLMService:
         # 1. Inject knowledge base context
         if context:
             context_block = (
-                "[CONTEXT — Answer ONLY from this information. "
-                "If the answer is not here, say so.]\n\n"
+                "[KNOWLEDGE BASE CONTEXT — Use this information to inform your answer. "
+                "Prioritize this context but you may also reason from your general knowledge "
+                "when the context is relevant but incomplete.]\n\n"
             )
             for item in context:
                 context_block += f"--- {item.title} ---\n{item.content}\n\n"
@@ -312,10 +313,11 @@ class LLMService:
             )
             if context:
                 prompt += (
-                    "\n\nIMPORTANT: You have been provided with a knowledge base context. "
-                    "Base your answers on that context. If the context doesn't contain enough "
-                    "information to answer accurately, say \"I don't have that information in "
-                    "my knowledge base\" — never fabricate information."
+                    "\n\nYou have been provided with knowledge base context. "
+                    "Draw primarily from this context when answering. If the context is "
+                    "relevant but doesn't fully cover the question, combine it with your "
+                    "general knowledge and note which parts come from the knowledge base. "
+                    "Only say you lack information if the topic is genuinely not covered."
                 )
             if exemplars:
                 prompt += (
