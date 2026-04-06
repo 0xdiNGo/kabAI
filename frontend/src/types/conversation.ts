@@ -17,6 +17,8 @@ export interface Conversation {
   is_collaboration: boolean;
   collaboration_mode: string | null;
   message_count: number;
+  summary: string | null;
+  last_agent_name: string | null;
   created_at: string;
   updated_at: string;
 }

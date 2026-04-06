@@ -25,5 +25,7 @@ class Conversation(BaseModel):
     messages: list[Message] = Field(default_factory=list)
     is_collaboration: bool = False
     collaboration_mode: str | None = None  # "roundtable" | "orchestrator"
+    summary: str | None = None  # AI-generated one-line summary
+    last_agent_name: str | None = None  # Name of the last agent to respond
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

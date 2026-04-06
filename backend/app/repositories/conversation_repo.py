@@ -38,14 +38,24 @@ class ConversationRepository:
         return conversations
 
     async def add_message(self, conversation_id: str, message: Message) -> bool:
+        updates: dict = {"updated_at": datetime.now(timezone.utc)}
+        # Track last agent name for conversation list display
+        if message.role == "assistant" and message.agent_name:
+            updates["last_agent_name"] = message.agent_name
         result = await self.collection.update_one(
             {"_id": ObjectId(conversation_id)},
             {
                 "$push": {"messages": message.model_dump()},
-                "$set": {"updated_at": datetime.now(timezone.utc)},
+                "$set": updates,
             },
         )
         return result.modified_count > 0
+
+    async def update_summary(self, conversation_id: str, summary: str) -> None:
+        await self.collection.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$set": {"summary": summary}},
+        )
 
     async def delete(self, conversation_id: str, user_id: str) -> bool:
         result = await self.collection.delete_one(

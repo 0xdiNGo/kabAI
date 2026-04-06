@@ -31,8 +31,25 @@ async def list_conversations(
     svc: ConversationService = Depends(get_conversation_service),
 ):
     convos = await svc.list_conversations(user.id, limit, offset)
-    return [
-        ConversationResponse(
+    results = []
+    for c in convos:
+        # Generate a quick summary from the first user message if none stored
+        summary = c.summary
+        if not summary and c.messages:
+            first_user = next((m for m in c.messages if m.role == "user"), None)
+            if first_user:
+                summary = first_user.content[:120].strip()
+                if len(first_user.content) > 120:
+                    summary += "..."
+
+        # Derive agent name if not stored
+        agent_name = c.last_agent_name
+        if not agent_name and c.agent_id:
+            agent = await svc.agent_repo.find_by_id(c.agent_id)
+            if agent:
+                agent_name = agent.name
+
+        results.append(ConversationResponse(
             id=c.id,
             title=c.title,
             agent_id=c.agent_id,
@@ -41,11 +58,12 @@ async def list_conversations(
             is_collaboration=c.is_collaboration,
             collaboration_mode=c.collaboration_mode,
             message_count=len(c.messages),
+            summary=summary,
+            last_agent_name=agent_name,
             created_at=c.created_at,
             updated_at=c.updated_at,
-        )
-        for c in convos
-    ]
+        ))
+    return results
 
 
 @router.post("", response_model=dict, status_code=201)

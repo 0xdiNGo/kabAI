@@ -108,6 +108,7 @@ class ConversationService:
             role="assistant",
             content=result["content"],
             agent_id=convo.agent_id,
+            agent_name=agent.name if agent else None,
             model_used=result["model_used"],
             token_count=result.get("token_count"),
         )
@@ -180,6 +181,7 @@ class ConversationService:
                     role="assistant",
                     content=full_content,
                     agent_id=convo.agent_id,
+                    agent_name=agent.name if agent else None,
                     model_used=event.get("model_used"),
                 )
                 await self.conversation_repo.add_message(conversation_id, assistant_msg)

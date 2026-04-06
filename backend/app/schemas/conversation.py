@@ -35,6 +35,8 @@ class ConversationResponse(BaseModel):
     is_collaboration: bool = False
     collaboration_mode: str | None = None
     message_count: int
+    summary: str | None = None
+    last_agent_name: str | None = None
     created_at: datetime
     updated_at: datetime
 

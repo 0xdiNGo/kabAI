@@ -531,19 +531,31 @@ export default function DashboardPage() {
                 className="flex items-center justify-between rounded-lg bg-matrix-card px-4 py-3 hover:bg-matrix-input transition-colors cursor-pointer"
               >
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium">{c.title ?? "Untitled"}</span>
-                  {c.collaboration_mode && (
-                    <span className="ml-2 rounded-full bg-matrix-purple-dim/30 px-2 py-0.5 text-xs text-matrix-purple">
-                      {c.collaboration_mode}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{c.title ?? "Untitled"}</span>
+                    {c.collaboration_mode && (
+                      <span className="rounded-full bg-matrix-purple-dim/30 px-2 py-0.5 text-xs text-matrix-purple">
+                        {c.collaboration_mode}
+                      </span>
+                    )}
+                    {c.last_agent_name && !c.collaboration_mode && (
+                      <span className="rounded-full bg-matrix-accent/10 px-2 py-0.5 text-xs text-matrix-accent">
+                        {c.last_agent_name}
+                      </span>
+                    )}
+                  </div>
+                  {c.summary && (
+                    <p className="mt-0.5 text-xs text-matrix-text-dim truncate">{c.summary}</p>
                   )}
-                  <span className="ml-2 text-sm text-matrix-text-faint">
-                    {c.message_count} messages
-                  </span>
+                  <div className="mt-0.5 flex items-center gap-3 text-xs text-matrix-text-faint">
+                    <span>{c.message_count} messages</span>
+                    <span>{new Date(c.updated_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
+                      {new Date(c.updated_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
+                  </div>
                 </div>
                 <button
                   onClick={(e) => deleteConversation(e, c.id)}
-                  className="ml-3 rounded-lg px-2 py-1 text-matrix-text-faint hover:text-matrix-red hover:bg-matrix-input transition-colors"
+                  className="ml-3 rounded-lg px-2 py-1 text-matrix-text-faint hover:text-matrix-red hover:bg-matrix-input transition-colors shrink-0"
                   title="Delete conversation"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
