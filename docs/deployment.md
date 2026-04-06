@@ -2,7 +2,7 @@
 
 ## Demo on Rancher Desktop
 
-This runs a production-like stack locally: nginx serving the built frontend, FastAPI backend without hot reload, MongoDB, and Redis — all with health checks and proper startup ordering.
+This runs a production-like stack locally: nginx serving the built frontend, FastAPI backend without hot reload, MongoDB, Redis, and Qdrant — all with health checks and proper startup ordering.
 
 ### Prerequisites
 
@@ -59,7 +59,20 @@ make fernet-key
 make demo
 ```
 
-This builds both Docker images and starts all services. Wait for health checks to pass — you'll see logs from all 4 services. The frontend is ready when you see nginx startup messages.
+This builds both Docker images and starts all services (frontend, backend, MongoDB, Redis, Qdrant). Wait for health checks to pass. The frontend is ready when you see nginx startup messages.
+
+### Demo Stack Architecture
+
+```mermaid
+graph TD
+    Browser -->|:3000| Nginx[nginx / Frontend]
+    Nginx -->|proxy /api| Backend[FastAPI Backend]
+    Backend --> MongoDB[(MongoDB)]
+    Backend --> Redis[(Redis)]
+    Backend --> Qdrant[(Qdrant)]
+    Backend -->|litellm| Ollama[Ollama Host]
+    Backend -->|litellm| Cloud[Cloud LLM APIs]
+```
 
 #### 4. Seed demo data
 
@@ -191,12 +204,20 @@ The demo stack is close to production-ready but has these gaps:
 
 - Run MongoDB as a replica set for durability (single-node demo has no replication)
 - Enable MongoDB authentication (`MONGODB_URL=mongodb://user:pass@host:27017/kabai?authSource=admin`)
-- Set up automated backups
+- Set up automated backups for MongoDB and Qdrant
 - Add Redis persistence configuration or use a managed Redis
+
+### Vector Database (Qdrant)
+
+- Qdrant stores embedding vectors for semantic search — data volume should be persistent
+- For large deployments (10M+ vectors), consider Qdrant's distributed mode or managed Qdrant Cloud
+- Back up Qdrant snapshots: `POST http://qdrant:6333/collections/knowledge_vectors/snapshots`
+- Monitor via Qdrant dashboard at port 6333 (don't expose externally in production)
+- If Qdrant is unavailable, the system gracefully falls back to keyword-only search
 
 ### Networking
 
-- Don't expose MongoDB (27017) or Redis (6379) ports externally — the demo compose intentionally doesn't
+- Don't expose MongoDB (27017), Redis (6379), or Qdrant (6333) ports externally — the demo compose intentionally doesn't for Mongo/Redis
 - Use a reverse proxy or ingress controller for TLS termination
 - Configure proper DNS
 
@@ -214,5 +235,6 @@ The project is designed for eventual Kubernetes deployment but K8s manifests don
 - Frontend: Deployment + Service (or serve from CDN)
 - MongoDB: StatefulSet with PVC (or use a managed service like Atlas)
 - Redis: Deployment with PVC (or use managed ElastiCache/Memorystore)
+- Qdrant: StatefulSet with PVC (or use Qdrant Cloud)
 - Ingress: nginx-ingress or equivalent for TLS + routing
 - Use Kustomize overlays for dev/staging/prod environment differences

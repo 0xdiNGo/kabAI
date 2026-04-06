@@ -44,7 +44,7 @@ For LLM functionality, add at least one provider key:
 make dev
 ```
 
-This starts the backend (port 8000), frontend (port 5173), MongoDB (27017), and Redis (6379) with hot reload enabled.
+This starts the backend (port 8000), frontend (port 5173), MongoDB (27017), Redis (6379), and Qdrant (6333) with hot reload enabled.
 
 Open http://localhost:5173
 
@@ -144,12 +144,28 @@ The dev `docker-compose.yml` mounts source directories as volumes for hot reload
 - `./backend/app` → `/app/app` (uvicorn `--reload`)
 - `./frontend/src` → `/app/src` (Vite HMR)
 
-MongoDB data persists in a Docker volume (`mongo_data`). To reset:
+MongoDB data persists in a Docker volume (`mongo_data`), Qdrant in (`qdrant_data`). To reset:
 
 ```bash
 docker compose down -v
 docker compose up --build
 ```
+
+### Service Architecture (Development)
+
+```mermaid
+graph LR
+    FE[Frontend :5173] --> BE[Backend :8000]
+    BE --> MongoDB[:27017]
+    BE --> Redis[:6379]
+    BE --> Qdrant[:6333]
+    BE --> Ollama[Ollama :11434]
+    BE --> CloudLLM[Cloud LLM APIs]
+```
+
+### Qdrant Dashboard
+
+Access the Qdrant dashboard at http://localhost:6333/dashboard to inspect stored vectors, collection stats, and run test queries.
 
 ## Makefile Reference
 

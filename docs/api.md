@@ -536,6 +536,64 @@ Or on failure:
 
 ---
 
+### POST /providers/{provider_id}/ollama/create-model
+
+Create a custom Ollama model from a base model and a LoRA adapter.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "model_name": "my-custom-llama",
+  "base_model": "llama3",
+  "adapter_path": "/path/to/adapter",
+  "system_prompt": "You are a helpful assistant."
+}
+```
+
+| Field           | Type   | Required | Default | Notes                                      |
+|-----------------|--------|----------|---------|--------------------------------------------|
+| `model_name`    | string | yes      |         | Name for the new Ollama model              |
+| `base_model`    | string | yes      |         | Base model to build on (e.g., `llama3`)    |
+| `adapter_path`  | string | yes      |         | Filesystem path to the LoRA adapter files  |
+| `system_prompt` | string | no       | null    | Default system prompt baked into the model |
+
+**Response (200):**
+```json
+{ "status": "ok", "model_name": "my-custom-llama" }
+```
+
+**Errors:** 404 if provider not found or is not an Ollama provider.
+
+---
+
+### POST /providers/{provider_id}/ollama/delete-model
+
+Delete a model from an Ollama provider.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "model_name": "my-custom-llama"
+}
+```
+
+| Field        | Type   | Required | Notes                        |
+|--------------|--------|----------|------------------------------|
+| `model_name` | string | yes      | Name of the Ollama model to delete |
+
+**Response (200):**
+```json
+{ "status": "ok", "model_name": "my-custom-llama" }
+```
+
+**Errors:** 404 if provider not found or is not an Ollama provider.
+
+---
+
 ## Conversations
 
 ### GET /conversations
@@ -757,7 +815,10 @@ Get system settings.
   "max_background_chats": 5,
   "roundtable_max_rounds": 3,
   "ingest_max_items": 500,
-  "ingest_max_urls": 20
+  "ingest_max_urls": 20,
+  "huggingface_enabled": true,
+  "huggingface_has_token": false,
+  "embedding_model": "openai/text-embedding-3-small"
 }
 ```
 
@@ -769,6 +830,9 @@ Get system settings.
 | `roundtable_max_rounds`| int          | Max discussion rounds in roundtable mode           |
 | `ingest_max_items`     | int          | Max items per knowledge base ingest operation      |
 | `ingest_max_urls`      | int          | Max URLs to crawl in a deep ingest-url operation   |
+| `huggingface_enabled`  | bool         | Whether HuggingFace integration is active          |
+| `huggingface_has_token`| bool         | Whether a HuggingFace API token is stored (never exposes the actual token) |
+| `embedding_model`      | string/null  | Model used for vector embeddings                   |
 
 ---
 
@@ -786,7 +850,10 @@ Update system settings.
   "max_background_chats": 10,
   "roundtable_max_rounds": 5,
   "ingest_max_items": 1000,
-  "ingest_max_urls": 50
+  "ingest_max_urls": 50,
+  "huggingface_enabled": true,
+  "huggingface_token": "hf_abc123...",
+  "embedding_model": "openai/text-embedding-3-small"
 }
 ```
 
@@ -798,6 +865,9 @@ Update system settings.
 | `roundtable_max_rounds`| int         | no       |                                                 |
 | `ingest_max_items`     | int         | no       |                                                 |
 | `ingest_max_urls`      | int         | no       |                                                 |
+| `huggingface_enabled`  | bool        | no       | Enable/disable HuggingFace integration          |
+| `huggingface_token`    | string/null | no       | HuggingFace API token (encrypted at rest with Fernet). Set to `null` to clear |
+| `embedding_model`      | string/null | no       | Model for vector embeddings. Set to `null` to clear |
 
 All fields optional -- only include what you want to change.
 
@@ -920,7 +990,7 @@ Delete a knowledge base and all its items.
 
 ### POST /knowledge-bases/{kb_id}/ingest
 
-Ingest raw text content into a knowledge base. The text is chunked and processed in the background.
+Ingest raw text content into a knowledge base. The text is chunked and enqueued for persistent background processing.
 
 **Auth required:** Admin
 
@@ -928,29 +998,33 @@ Ingest raw text content into a knowledge base. The text is chunked and processed
 ```json
 {
   "content": "Full text content to ingest...",
-  "source": "architecture-doc.md"
+  "source": "architecture-doc.md",
+  "chunk_size": "medium",
+  "ai_titles": false
 }
 ```
 
-| Field     | Type   | Required | Default | Notes                         |
-|-----------|--------|----------|---------|-------------------------------|
-| `content` | string | yes      |         | Raw text to ingest            |
-| `source`  | string | no       | null    | Label for tracking origin     |
+| Field        | Type   | Required | Default    | Notes                                                  |
+|--------------|--------|----------|------------|--------------------------------------------------------|
+| `content`    | string | yes      |            | Raw text to ingest                                     |
+| `source`     | string | no       | null       | Label for tracking origin                              |
+| `chunk_size` | string | no       | `"medium"` | `small`, `medium`, `large`, or `xlarge`                |
+| `ai_titles`  | bool   | no       | false      | Use LLM to generate chunk titles (slower, costs tokens) |
 
 **Response (200):**
 ```json
-{ "status": "started", "kb_id": "507f1f77bcf86cd799439011" }
+{ "status": "queued", "job_id": "abc123", "chunks_enqueued": 12 }
 ```
 
 **Notes:**
-- Runs as a background task -- poll `/ingest-status` to track progress
+- Chunks are enqueued to the persistent ingest queue -- poll `/ingest-status` or `/jobs` to track progress
 - 404 if knowledge base not found
 
 ---
 
 ### POST /knowledge-bases/{kb_id}/ingest-url
 
-Ingest content from a URL. Optionally crawl linked pages.
+Ingest content from a URL. Optionally crawl linked pages. Supports RFC-aware ingestion for IETF documents.
 
 **Auth required:** Admin
 
@@ -958,14 +1032,22 @@ Ingest content from a URL. Optionally crawl linked pages.
 ```json
 {
   "url": "https://docs.example.com/guide",
-  "deep": true
+  "deep": true,
+  "chunk_size": "medium",
+  "ai_titles": false,
+  "ai_deep_research": false,
+  "rfc_analysis": true
 }
 ```
 
-| Field  | Type | Required | Default | Notes                                          |
-|--------|------|----------|---------|-------------------------------------------------|
-| `url`  | string | yes    |         | URL to fetch and ingest                        |
-| `deep` | bool   | no     | false   | If true, also crawl and ingest linked pages    |
+| Field              | Type   | Required | Default    | Notes                                                     |
+|--------------------|--------|----------|------------|-----------------------------------------------------------|
+| `url`              | string | yes      |            | URL to fetch and ingest                                   |
+| `deep`             | bool   | no       | false      | If true, also crawl and ingest linked pages               |
+| `chunk_size`       | string | no       | `"medium"` | `small`, `medium`, `large`, or `xlarge`                   |
+| `ai_titles`        | bool   | no       | false      | Use LLM for chunk titles (slower, costs tokens)           |
+| `ai_deep_research` | bool   | no       | false      | Use LLM to select related links (vs heuristic) when `deep` is true |
+| `rfc_analysis`     | bool   | no       | true       | Generate AI analysis comparing RFC versions               |
 
 **Response (200):**
 ```json
@@ -995,8 +1077,15 @@ Poll for the status of a running ingest task.
 {
   "state": "running",
   "current_step": "Chunking document...",
+  "steps_log": ["Fetching URL...", "Chunking document..."],
+  "chunks_total": 25,
+  "chunks_completed": 12,
   "items_created": 12,
   "urls_processed": 3,
+  "tokens_used": 1500,
+  "elapsed_seconds": 8.3,
+  "estimated_remaining_seconds": 4.1,
+  "estimated_remaining_tokens": 800,
   "error": null,
   "result": null
 }
@@ -1007,21 +1096,152 @@ Poll for the status of a running ingest task.
 {
   "state": "completed",
   "current_step": "Done",
+  "steps_log": ["Fetching URL...", "Chunking document...", "Done"],
+  "chunks_total": 42,
+  "chunks_completed": 42,
   "items_created": 42,
   "urls_processed": 5,
+  "tokens_used": 5200,
+  "elapsed_seconds": 23.5,
+  "estimated_remaining_seconds": null,
+  "estimated_remaining_tokens": null,
   "error": null,
   "result": { "items_created": 42 }
 }
 ```
 
-| Field            | Type        | Notes                                         |
-|------------------|-------------|-----------------------------------------------|
-| `state`          | string      | `idle`, `running`, `completed`, or `failed`   |
-| `current_step`   | string/null | Human-readable progress description           |
-| `items_created`  | int         | Number of items created so far                |
-| `urls_processed` | int         | Number of URLs fetched (for URL ingest)       |
-| `error`          | string/null | Error message if `state` is `failed`          |
-| `result`         | object/null | Final result when `state` is `completed`      |
+| Field                          | Type        | Notes                                         |
+|--------------------------------|-------------|-----------------------------------------------|
+| `state`                        | string      | `idle`, `running`, `completed`, or `failed`   |
+| `current_step`                 | string/null | Human-readable progress description           |
+| `steps_log`                    | string[]    | Last 20 step messages                         |
+| `chunks_total`                 | int         | Total chunks to process                       |
+| `chunks_completed`             | int         | Chunks processed so far                       |
+| `items_created`                | int         | Number of items created so far                |
+| `urls_processed`               | int         | Number of URLs fetched (for URL ingest)       |
+| `tokens_used`                  | int         | Tokens consumed during processing             |
+| `elapsed_seconds`              | float       | Wall-clock time since task started            |
+| `estimated_remaining_seconds`  | float/null  | Estimated seconds until completion            |
+| `estimated_remaining_tokens`   | int/null    | Estimated remaining token cost                |
+| `error`                        | string/null | Error message if `state` is `failed`          |
+| `result`                       | object/null | Final result when `state` is `completed`      |
+
+---
+
+### POST /knowledge-bases/{kb_id}/ingest-hf
+
+Ingest a HuggingFace dataset into a knowledge base. Fetches rows from the dataset and chunks them for ingestion.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "repo_id": "wikipedia/simple-wikipedia",
+  "subset": null,
+  "split": "train",
+  "max_rows": 500,
+  "chunk_size": "medium",
+  "ai_titles": false
+}
+```
+
+| Field        | Type   | Required | Default    | Notes                                                  |
+|--------------|--------|----------|------------|--------------------------------------------------------|
+| `repo_id`    | string | yes      |            | HuggingFace dataset repo ID (e.g., `user/dataset`)    |
+| `subset`     | string | no       | null       | Dataset subset/configuration name                      |
+| `split`      | string | no       | `"train"`  | Dataset split to pull from                             |
+| `max_rows`   | int    | no       | 500        | Maximum number of rows to fetch                        |
+| `chunk_size` | string | no       | `"medium"` | `small`, `medium`, `large`, or `xlarge`                |
+| `ai_titles`  | bool   | no       | false      | Use LLM for chunk titles (slower, costs tokens)        |
+
+**Response (200):**
+```json
+{ "status": "started", "kb_id": "507f1f77bcf86cd799439011" }
+```
+
+**Notes:**
+- Requires HuggingFace integration to be enabled in settings
+- Runs as a background task -- poll `/ingest-status` to track progress
+- 404 if knowledge base not found or HuggingFace integration is disabled
+
+---
+
+### POST /knowledge-bases/{kb_id}/ingest-cancel
+
+Cancel a running ingest task for a knowledge base.
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{ "message": "Ingestion cancelled" }
+```
+
+---
+
+### GET /knowledge-bases/{kb_id}/jobs
+
+List ingest jobs for a knowledge base with per-job progress. Each ingestion creates one or more jobs in the persistent queue.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+[
+  {
+    "job_id": "abc123",
+    "source": "architecture-doc.md",
+    "total": 15,
+    "pending": 3,
+    "processing": 1,
+    "done": 10,
+    "failed": 1
+  }
+]
+```
+
+---
+
+### DELETE /knowledge-bases/{kb_id}/jobs/{job_id}
+
+Cancel a queued ingest job. Removes all pending chunks for that job from the queue. Chunks already processed or in-progress are not affected.
+
+**Auth required:** Admin
+
+**Response (200):**
+```json
+{ "pending_deleted": 8 }
+```
+
+---
+
+### GET /knowledge-bases/queue-status
+
+Get global ingest queue depth and worker status across all knowledge bases.
+
+**Auth required:** Yes
+
+**Response (200):**
+```json
+{
+  "pending": 42,
+  "processing": 2,
+  "done": 150,
+  "failed": 3,
+  "worker_running": true,
+  "worker_task_alive": true
+}
+```
+
+| Field                | Type | Notes                                           |
+|----------------------|------|-------------------------------------------------|
+| `pending`            | int  | Queue items waiting to be processed             |
+| `processing`         | int  | Queue items currently being processed           |
+| `done`               | int  | Queue items completed                           |
+| `failed`             | int  | Queue items that failed                         |
+| `worker_running`     | bool | Whether the ingest worker loop is active        |
+| `worker_task_alive`  | bool | Whether the worker asyncio task is still alive  |
 
 ---
 
@@ -1281,6 +1501,102 @@ Supported `name` values: `kagi`, `google`, `bing`, `brave`, `duckduckgo`, `searx
 ### POST /search-providers/{id}/set-default — Set as default search provider
 ### DELETE /search-providers/{id} — Delete provider
 ### POST /search-providers/test — Test the default provider with a sample query
+
+---
+
+## HuggingFace
+
+Inspect HuggingFace repositories to determine what they contain and how to import them into Tiger Team.
+
+### POST /huggingface/inspect
+
+Inspect a HuggingFace repository and get a routing suggestion for how to import it.
+
+**Auth required:** Admin
+
+**Request:**
+```json
+{
+  "repo_id": "HuggingFaceH4/no_robots"
+}
+```
+
+| Field     | Type   | Required | Notes                                           |
+|-----------|--------|----------|-------------------------------------------------|
+| `repo_id` | string | yes      | HuggingFace repo ID (e.g., `user/repo-name`)   |
+
+**Response (200):**
+```json
+{
+  "repo_id": "HuggingFaceH4/no_robots",
+  "repo_type": "dataset",
+  "suggestion": "exemplar_set",
+  "reason": "This dataset has chat-format data suitable for few-shot exemplar pairs.",
+  "details": {
+    "format": "chat",
+    "columns": ["messages"],
+    "sample_count": 10000
+  }
+}
+```
+
+| Field        | Type   | Notes                                                       |
+|--------------|--------|-------------------------------------------------------------|
+| `repo_id`    | string | Resolved repo ID                                           |
+| `repo_type`  | string | `dataset`, `model`, or `unknown`                            |
+| `suggestion` | string | Import route: `exemplar_set`, `knowledge_base`, `lora_adapter`, or `unknown` |
+| `reason`     | string | Human-readable explanation of the suggestion                |
+| `details`    | object | Format-specific metadata (columns, file lists, etc.)        |
+
+**Suggestion values:**
+
+| `suggestion`     | When                                       | Action                                    |
+|------------------|--------------------------------------------|-------------------------------------------|
+| `exemplar_set`   | Dataset with chat or instruction format    | Import via `POST /exemplar-sets/{id}/import-hf` |
+| `knowledge_base` | Dataset with text documents                | Import via `POST /knowledge-bases/{kb_id}/ingest-hf` |
+| `lora_adapter`   | Model repo with LoRA adapter files         | Register via `POST /providers/{id}/ollama/create-model` |
+| `unknown`        | Cannot determine how to use the repo       | Manual review needed                      |
+
+**Errors:** 404 if HuggingFace integration is disabled in settings.
+
+**Notes:**
+- Requires `huggingface_enabled: true` in system settings
+- For datasets, auto-detects format by inspecting columns (chat, instruction, or text)
+- For models, checks for LoRA adapter files (adapter_config.json, adapter_model.safetensors)
+
+### HuggingFace Inspect-Route-Import Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as Frontend
+    participant API as POST /huggingface/inspect
+    participant HF as HuggingFace Hub
+
+    UI->>API: { repo_id: "user/dataset" }
+    API->>HF: Fetch repo metadata
+    HF-->>API: Repo type + file listing
+    alt Dataset repo
+        API->>HF: Detect dataset format (columns)
+        HF-->>API: Format info (chat/instruction/text)
+        API-->>UI: suggestion: "exemplar_set" or "knowledge_base"
+    else Model repo
+        API->>HF: Inspect model files
+        HF-->>API: File listing (LoRA check)
+        API-->>UI: suggestion: "lora_adapter" or "unknown"
+    else Unknown
+        API-->>UI: suggestion: "unknown"
+    end
+
+    Note over UI: User confirms import route
+
+    alt exemplar_set
+        UI->>API: POST /exemplar-sets/{id}/import-hf
+    else knowledge_base
+        UI->>API: POST /knowledge-bases/{kb_id}/ingest-hf
+    else lora_adapter
+        UI->>API: POST /providers/{id}/ollama/create-model
+    end
+```
 
 ---
 

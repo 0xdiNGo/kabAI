@@ -692,6 +692,198 @@ Returns `{"status": "ok"}`.
 In the demo compose, health checks are configured for:
 - **MongoDB**: `mongosh --eval "db.adminCommand('ping')"` every 5s
 - **Redis**: `redis-cli ping` every 5s
+- **Qdrant**: TCP probe on port 6333 every 5s
 - **Backend**: Python urllib to `/health` every 5s (starts after 10s delay)
 
 Services wait for their dependencies to be healthy before starting.
+
+---
+
+## Vector Search & Embeddings
+
+### How it works
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Backend
+    participant Qdrant
+    participant MongoDB
+
+    User->>Backend: Ask question
+    Backend->>Backend: Embed query (litellm)
+    par Vector search
+        Backend->>Qdrant: Search (query_vector, kb_ids)
+        Qdrant-->>Backend: [{id, score}]
+    and Keyword search
+        Backend->>MongoDB: $text search (query, kb_ids)
+        MongoDB-->>Backend: [{item, textScore}]
+    end
+    Backend->>Backend: Merge + dedupe (0.7 vector + 0.3 text)
+    Backend->>MongoDB: Fetch full items by IDs
+    Backend->>User: Top 15 items as context
+```
+
+### Configure embedding model
+
+Set via Settings page (Providers → Embedding Model) or API:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"embedding_model": "ollama/nomic-embed-text"}'
+```
+
+Recommended models:
+- **`ollama/nomic-embed-text`** — 768 dimensions, fast, free, good quality for local hosting
+- **`ollama/mxbai-embed-large`** — 1024 dimensions, better quality, slightly slower
+- **`openai/text-embedding-3-small`** — 1536 dimensions, excellent quality, $0.02/1M tokens
+
+Leave empty (`null`) to disable vector search and use keyword-only retrieval.
+
+### Qdrant management
+
+**Dashboard:** http://localhost:6333/dashboard (when port is exposed)
+
+**Check collection stats:**
+```bash
+curl -s http://localhost:6333/collections/knowledge_vectors | python3 -m json.tool
+```
+
+**Create a snapshot (backup):**
+```bash
+curl -s -X POST http://localhost:6333/collections/knowledge_vectors/snapshots
+```
+
+**Reset vectors (delete collection):**
+```bash
+curl -s -X DELETE http://localhost:6333/collections/knowledge_vectors
+```
+The collection is recreated automatically on the next ingest.
+
+### Re-embed existing content
+
+If you change the embedding model, existing vectors become incompatible. To re-embed:
+1. Delete the Qdrant collection (see above)
+2. Re-ingest your knowledge bases (the worker will generate new embeddings with the new model)
+
+---
+
+## HuggingFace Integration
+
+### Enable HuggingFace
+
+Via Settings page (Providers → HuggingFace Integration) or API:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"huggingface_enabled": true}'
+```
+
+### Set HuggingFace token (optional)
+
+A token grants access to gated datasets and higher rate limits:
+
+```bash
+curl -s -X PUT http://localhost:3000/api/v1/settings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"huggingface_token": "hf_..."}'
+```
+
+The token is encrypted at rest using Fernet.
+
+### Inspect a HuggingFace repo
+
+The inspect endpoint auto-detects repo type and suggests the best import action:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/huggingface/inspect \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"repo_id": "tatsu-lab/alpaca"}'
+```
+
+Returns `suggestion`: `exemplar_set`, `knowledge_base`, or `lora_adapter`.
+
+### Import HuggingFace dataset into KB
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-hf \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "repo_id": "wikipedia/20220301.en",
+    "max_rows": 500,
+    "chunk_size": "medium"
+  }'
+```
+
+---
+
+## LoRA Adapter Registration
+
+### Register a LoRA adapter with Ollama
+
+Prerequisites: place the GGUF adapter file on the Ollama host machine.
+
+Via Providers page (expand Ollama provider → LoRA Adapters) or API:
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/providers/PROVIDER_ID/ollama/create-model \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "model_name": "llama3-finance-lora",
+    "base_model": "llama3:8b",
+    "adapter_path": "/models/adapters/finance.gguf"
+  }'
+```
+
+The `adapter_path` must be a filesystem path on the Ollama host. After registration, the model appears as `ollama/llama3-finance-lora` in all model dropdowns.
+
+### Remove a registered model
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/providers/PROVIDER_ID/ollama/delete-model \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"model_name": "llama3-finance-lora"}'
+```
+
+---
+
+## Ingest Queue Management
+
+### Check global queue status
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases/queue-status \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Returns counts: `pending`, `processing`, `done`, `failed`, `total`.
+
+### List jobs for a KB
+
+```bash
+curl -s http://localhost:3000/api/v1/knowledge-bases/KB_ID/jobs \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Cancel a running ingest
+
+```bash
+curl -s -X POST http://localhost:3000/api/v1/knowledge-bases/KB_ID/ingest-cancel \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Cancel a specific queued job
+
+```bash
+curl -s -X DELETE http://localhost:3000/api/v1/knowledge-bases/KB_ID/jobs/JOB_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
