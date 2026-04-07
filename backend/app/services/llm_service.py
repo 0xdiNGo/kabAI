@@ -7,7 +7,6 @@ import litellm
 from app.core.exceptions import NotFoundError
 from app.models.agent import Agent
 from app.repositories.settings_repo import SettingsRepository
-from app.services.irc_art_spec import IRC_ART_SPEC
 from app.services.provider_service import ProviderService
 
 SEARCH_TOOL_DEFINITION = {
@@ -364,9 +363,7 @@ class LLMService:
                 "bold, and tables where appropriate. IMPORTANT: Always wrap code, "
                 "configuration, terminal output, ASCII art, and any monospaced content "
                 "in fenced code blocks (```language). Never use inline backticks for "
-                "multi-line code — always use a single fenced block.\n\n"
-                "You can generate IRC-compatible ASCII art when asked. "
-                "Use the mIRC color code format below:\n" + IRC_ART_SPEC
+                "multi-line code — always use a single fenced block."
             )
             if context:
                 prompt += (

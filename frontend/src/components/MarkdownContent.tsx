@@ -1,15 +1,57 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import TerminalBlock, { hasMircCodes } from "@/components/TerminalBlock";
-import CodeEditor from "@/components/CodeEditor";
-
-// Detect ANSI escape sequences
-const ANSI_REGEX = /\x1b\[[\d;]*m/;
 
 interface Props {
   content: string;
   className?: string;
   onExport?: (content: string, format: string, metadata?: Record<string, string>) => void;
+}
+
+function CodeBlock({ text, language, onExport }: { text: string; language: string | null; onExport?: Props["onExport"] }) {
+  const lines = text.split("\n").length;
+
+  const copyRaw = () => navigator.clipboard.writeText(text);
+  const copyMarkdown = () => {
+    const lang = language || "";
+    navigator.clipboard.writeText(`\`\`\`${lang}\n${text}\n\`\`\``);
+  };
+
+  return (
+    <div className="relative group/code my-2">
+      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover/code:opacity-100 transition-opacity z-10">
+        <button onClick={copyRaw}
+          className="rounded bg-[#1d2021]/80 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright">
+          Copy
+        </button>
+        <button onClick={copyMarkdown}
+          className="rounded bg-[#1d2021]/80 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright">
+          Copy MD
+        </button>
+        {onExport && (
+          <button onClick={() => onExport(text, language || "plaintext")}
+            className="rounded bg-[#1d2021]/80 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright">
+            Export
+          </button>
+        )}
+      </div>
+      <pre className="overflow-x-auto rounded-lg" style={{
+        background: "#1d2021",
+        padding: "1rem",
+        margin: 0,
+        fontSize: "0.8rem",
+        lineHeight: "1.5",
+      }}>
+        {lines > 3 && (
+          <div className="float-left pr-4 select-none text-right" style={{ color: "#504945", minWidth: "2rem" }}>
+            {Array.from({ length: lines }, (_, i) => (
+              <div key={i}>{i + 1}</div>
+            ))}
+          </div>
+        )}
+        <code className="text-[#ebdbb2]">{text}</code>
+      </pre>
+    </div>
+  );
 }
 
 export default function MarkdownContent({ content, className = "", onExport }: Props) {
@@ -31,18 +73,7 @@ export default function MarkdownContent({ content, className = "", onExport }: P
               </code>
             );
           }
-
-          const cleaned = text.replace(/\n$/, "");
-          const hasAnsi = ANSI_REGEX.test(cleaned);
-          const hasMirc = hasMircCodes(cleaned);
-
-          // Terminal content → xterm.js
-          if (hasMirc || hasAnsi) {
-            return <TerminalBlock text={cleaned} />;
-          }
-
-          // Code → Monaco Editor
-          return <CodeEditor text={cleaned} language={match?.[1] || null} onExport={onExport} />;
+          return <CodeBlock text={text.replace(/\n$/, "")} language={match?.[1] || null} onExport={onExport} />;
         },
         p({ children }) {
           return <p className="mb-2 last:mb-0">{children}</p>;
