@@ -78,6 +78,18 @@ class SearchService:
             logger.warning("Search failed (%s): %s", provider.name, e)
             return []
 
+    async def get_kagi_api_key(self) -> str | None:
+        """Get decrypted Kagi API key, or None if not configured."""
+        providers = []
+        async for doc in self.repo.collection.find({"name": "kagi"}):
+            doc["_id"] = str(doc["_id"])
+            from app.models.search_provider import SearchProvider
+            providers.append(SearchProvider(**doc))
+        provider = providers[0] if providers else None
+        if not provider or not provider.api_key_encrypted:
+            return None
+        return self._decrypt(provider.api_key_encrypted)
+
     async def _search_kagi(self, query: str, api_key: str | None, n: int) -> list[SearchResult]:
         """Kagi Search API — ranked web results."""
         headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
@@ -153,22 +165,37 @@ class SearchService:
             for item in data.get("data", [])[:n]
         ]
 
-    async def kagi_summarize(self, url: str, api_key: str | None,
-                              summary_type: str = "takeaway",
-                              engine: str = "cecil") -> str | None:
-        """Kagi Universal Summarizer — summarize a URL or document.
+    async def kagi_summarize(
+        self, url: str | None = None, text: str | None = None,
+        api_key: str | None = None,
+        summary_type: str = "takeaway",
+        engine: str = "cecil",
+    ) -> str | None:
+        """Kagi Universal Summarizer — summarize a URL or raw text.
 
-        Useful for KB ingestion: summarize a page before chunking.
         summary_type: "summary" (prose) or "takeaway" (bullet points)
         engine: "cecil" (friendly), "agnes" (technical), "muriel" ($1/summary enterprise)
         """
+        if not url and not text:
+            return None
         headers = {"Authorization": f"Bot {api_key}"} if api_key else {}
+        params: dict = {"summary_type": summary_type, "engine": engine}
+        if url:
+            params["url"] = url
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(
-                "https://kagi.com/api/v0/summarize",
-                params={"url": url, "summary_type": summary_type, "engine": engine},
-                headers=headers,
-            )
+            if text and not url:
+                # POST with text body for raw text summarization
+                resp = await client.post(
+                    "https://kagi.com/api/v0/summarize",
+                    json={**params, "text": text},
+                    headers=headers,
+                )
+            else:
+                resp = await client.get(
+                    "https://kagi.com/api/v0/summarize",
+                    params=params,
+                    headers=headers,
+                )
             resp.raise_for_status()
             data = resp.json().get("data", {})
         return data.get("output")

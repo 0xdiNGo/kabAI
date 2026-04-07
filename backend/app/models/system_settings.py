@@ -14,4 +14,6 @@ class SystemSettings(BaseModel):
     huggingface_enabled: bool = False
     huggingface_token_encrypted: str | None = None
     embedding_model: str | None = None
+    kagi_summarizer_enabled: bool = False
+    kagi_summarizer_engine: str = "cecil"  # cecil | agnes | muriel
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

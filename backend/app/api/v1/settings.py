@@ -24,6 +24,8 @@ class SettingsResponse(BaseModel):
     huggingface_enabled: bool
     huggingface_has_token: bool
     embedding_model: str | None
+    kagi_summarizer_enabled: bool
+    kagi_summarizer_engine: str
 
 
 class SettingsUpdate(BaseModel):
@@ -36,6 +38,8 @@ class SettingsUpdate(BaseModel):
     huggingface_enabled: bool | None = None
     huggingface_token: str | None = None
     embedding_model: str | None = None
+    kagi_summarizer_enabled: bool | None = None
+    kagi_summarizer_engine: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -54,6 +58,8 @@ async def get_settings(
         huggingface_enabled=settings.huggingface_enabled,
         huggingface_has_token=settings.huggingface_token_encrypted is not None,
         embedding_model=settings.embedding_model,
+        kagi_summarizer_enabled=settings.kagi_summarizer_enabled,
+        kagi_summarizer_engine=settings.kagi_summarizer_engine,
     )
 
 

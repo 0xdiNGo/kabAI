@@ -328,6 +328,26 @@ async def delete_knowledge_base(
     return {"message": "Knowledge base deleted"}
 
 
+@router.post("/{kb_id}/summarize", response_model=dict)
+async def summarize_kb(
+    kb_id: str,
+    request: Request,
+    _admin=Depends(require_admin),
+    repo: KnowledgeRepository = Depends(get_knowledge_repo),
+    svc: KnowledgeService = Depends(get_knowledge_service),
+):
+    """Generate Kagi summaries for KB items (runs as background task)."""
+    kb = await repo.find_base_by_id(kb_id)
+    if not kb:
+        raise NotFoundError("KnowledgeBase", kb_id)
+
+    mgr = request.app.state.ingest_manager
+    svc._status_callback = _make_status_callback(mgr, kb_id)
+    coro = svc.summarize_kb_items(kb_id)
+    await mgr.start_ingest(kb_id, coro)
+    return {"status": "started", "kb_id": kb_id}
+
+
 def _make_status_callback(mgr, kb_id: str):
     """Create a status callback that updates the IngestStatus with rich data."""
     def update(msg: str, **kwargs):

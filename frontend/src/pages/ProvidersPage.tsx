@@ -59,6 +59,8 @@ export default function ProvidersPage() {
   const [editIngestMaxItems, setEditIngestMaxItems] = useState("200");
   const [ingestMaxUrls, setIngestMaxUrls] = useState(10);
   const [editIngestMaxUrls, setEditIngestMaxUrls] = useState("10");
+  const [kagiSummarizerEnabled, setKagiSummarizerEnabled] = useState(false);
+  const [kagiSummarizerEngine, setKagiSummarizerEngine] = useState("cecil");
   const [hfEnabled, setHfEnabled] = useState(false);
   const [hfHasToken, setHfHasToken] = useState(false);
   const [hfToken, setHfToken] = useState("");
@@ -88,6 +90,7 @@ export default function ProvidersPage() {
       embedding_model: string | null;
       max_background_chats: number; roundtable_max_rounds: number;
       ingest_max_items: number; ingest_max_urls: number;
+      kagi_summarizer_enabled: boolean; kagi_summarizer_engine: string;
       huggingface_enabled: boolean; huggingface_has_token: boolean;
     }>("/settings").then((s) => {
       setDefaultModel(s.default_model);
@@ -104,6 +107,8 @@ export default function ProvidersPage() {
       setEditIngestMaxItems(String(s.ingest_max_items));
       setIngestMaxUrls(s.ingest_max_urls);
       setEditIngestMaxUrls(String(s.ingest_max_urls));
+      setKagiSummarizerEnabled(s.kagi_summarizer_enabled);
+      setKagiSummarizerEngine(s.kagi_summarizer_engine);
       setHfEnabled(s.huggingface_enabled);
       setHfHasToken(s.huggingface_has_token);
     }).catch(() => {});
@@ -423,6 +428,47 @@ export default function ProvidersPage() {
           <span className="text-sm text-matrix-text-faint">
             Current: {maxRounds} rounds
           </span>
+        </div>
+      </div>
+
+      {/* Kagi Summarizer */}
+      <div className="mb-6 rounded-xl bg-matrix-card p-5">
+        <h2 className="font-semibold mb-3">Kagi Universal Summarizer</h2>
+        <p className="text-sm text-matrix-text-dim mb-3">
+          Automatically summarize URLs during KB ingestion, deep research, and chat. Requires a Kagi search provider with API key.
+        </p>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={kagiSummarizerEnabled}
+              onChange={async (e) => {
+                const enabled = e.target.checked;
+                setKagiSummarizerEnabled(enabled);
+                await api.put("/settings", { kagi_summarizer_enabled: enabled });
+              }}
+              className="h-4 w-4 rounded accent-matrix-accent"
+            />
+            <span className="text-sm text-matrix-text">Enable Kagi Summarizer</span>
+          </label>
+          {kagiSummarizerEnabled && (
+            <div className="flex gap-3 items-center">
+              <label className="text-xs text-matrix-text-faint">Engine:</label>
+              <select
+                value={kagiSummarizerEngine}
+                onChange={async (e) => {
+                  const engine = e.target.value;
+                  setKagiSummarizerEngine(engine);
+                  await api.put("/settings", { kagi_summarizer_engine: engine });
+                }}
+                className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
+              >
+                <option value="cecil">Cecil (friendly, general)</option>
+                <option value="agnes">Agnes (technical, detailed)</option>
+                <option value="muriel">Muriel (enterprise, $1/summary)</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 

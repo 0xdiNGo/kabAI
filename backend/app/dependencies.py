@@ -125,8 +125,9 @@ def get_knowledge_service(
     llm_service: LLMService = Depends(get_llm_service),
     queue_repo: IngestQueueRepository = Depends(get_ingest_queue_repo),
     vector_service: VectorService | None = Depends(get_vector_service),
+    search_service: SearchService = Depends(get_search_service),
 ):
-    return KnowledgeService(knowledge_repo, llm_service, queue_repo, vector_service)
+    return KnowledgeService(knowledge_repo, llm_service, queue_repo, vector_service, search_service)
 
 
 def get_exemplar_service(

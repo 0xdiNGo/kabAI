@@ -52,13 +52,90 @@ class IngestLimits:
 
 
 class KnowledgeService:
-    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService, queue_repo=None, vector_service=None):
+    def __init__(self, knowledge_repo: KnowledgeRepository, llm_service: LLMService, queue_repo=None, vector_service=None, search_service=None):
         self.repo = knowledge_repo
         self.llm_service = llm_service
         self._queue_repo = queue_repo
         self.vector_service = vector_service
+        self.search_service = search_service
         # Status callback set by the API layer for background ingests
         self._status_callback = None
+
+    async def _maybe_summarize_url(self, url: str, body: str) -> str:
+        """Prepend a Kagi summary to content if summarizer is enabled."""
+        if not self.search_service:
+            return body
+        try:
+            settings = await self.llm_service.settings_repo.get()
+            if not settings.kagi_summarizer_enabled:
+                return body
+            api_key = await self.search_service.get_kagi_api_key()
+            if not api_key:
+                return body
+            self._update_status(f"Summarizing {url}")
+            summary = await self.search_service.kagi_summarize(
+                url=url, api_key=api_key,
+                summary_type="takeaway",
+                engine=settings.kagi_summarizer_engine,
+            )
+            if summary:
+                return f"# Summary\n{summary}\n\n---\n\n{body}"
+        except Exception as e:
+            logger.warning("Kagi summarize failed for %s: %s", url, e)
+        return body
+
+    async def summarize_kb_items(
+        self, kb_id: str, limit: int = 50,
+    ) -> dict:
+        """Generate Kagi summaries for existing KB items."""
+        if not self.search_service:
+            return {"summaries_created": 0}
+        settings = await self.llm_service.settings_repo.get()
+        if not settings.kagi_summarizer_enabled:
+            return {"summaries_created": 0, "error": "Kagi summarizer is disabled"}
+        api_key = await self.search_service.get_kagi_api_key()
+        if not api_key:
+            return {"summaries_created": 0, "error": "No Kagi API key configured"}
+
+        # Get items that don't already have summaries
+        items = await self.repo.find_items_by_base(kb_id, limit=limit)
+        existing_sources = {
+            item.source for item in items if item.source and item.source.startswith("Summary:")
+        }
+        to_summarize = [
+            item for item in items
+            if item.source not in existing_sources
+            and not (item.source or "").startswith("Summary:")
+            and len(item.content) > 200
+        ]
+
+        created = 0
+        for item in to_summarize[:limit]:
+            try:
+                self._update_status(f"Summarizing: {item.title}")
+                summary = await self.search_service.kagi_summarize(
+                    text=item.content[:10000], api_key=api_key,
+                    summary_type="takeaway",
+                    engine=settings.kagi_summarizer_engine,
+                )
+                if summary:
+                    from app.models.knowledge_base import KnowledgeItem
+                    summary_item = KnowledgeItem(
+                        knowledge_base_id=kb_id,
+                        title=f"Summary: {item.title}",
+                        content=summary,
+                        source=f"Summary: {item.title}",
+                        chunk_index=item.chunk_index,
+                    )
+                    await self.repo.add_item(summary_item)
+                    created += 1
+            except Exception as e:
+                logger.warning("Kagi summarize failed for item %s: %s", item.id, e)
+
+        if created:
+            await self.repo.update_item_count(kb_id)
+
+        return {"summaries_created": created, "items_processed": len(to_summarize)}
 
     def _update_status(self, msg: str, **kwargs):
         if self._status_callback:
@@ -298,6 +375,9 @@ class KnowledgeService:
         raw_html = response.text
         body = self._strip_html(raw_html) if "html" in content_type else raw_html
 
+        # Kagi summarizer: prepend summary as lead content
+        body = await self._maybe_summarize_url(url, body)
+
         self._update_status(f"Chunking and titling content from {url}")
         total = await self.ingest(kb_id, body, source=url, limits=limits)
         urls_followed: list[str] = []
@@ -322,6 +402,7 @@ class KnowledgeService:
                     limits.urls_processed += 1
                     ct = resp.headers.get("content-type", "")
                     text = self._strip_html(resp.text) if "html" in ct else resp.text
+                    text = await self._maybe_summarize_url(related_url, text)
                     count = await self.ingest(kb_id, text, source=related_url, limits=limits)
                     total += count
                     urls_followed.append(related_url)

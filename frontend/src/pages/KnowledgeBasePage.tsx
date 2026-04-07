@@ -473,6 +473,17 @@ export default function KnowledgeBasePage() {
                       placeholder="Search items..." className="flex-1 rounded-lg bg-matrix-input px-3 py-2 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none" />
                     <button onClick={searchKB} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Search</button>
                     {searchResults && <button onClick={() => { setSearchResults(null); setSearchQuery(""); }} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-faint hover:bg-matrix-hover transition-colors">Clear</button>}
+                    <button
+                      onClick={async () => {
+                        if (!selectedKB) return;
+                        try {
+                          await api.post(`/knowledge-bases/${selectedKB.id}/summarize`);
+                          startPolling();
+                        } catch { /* toast handles it */ }
+                      }}
+                      className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors"
+                      title="Generate Kagi summaries for items in this KB"
+                    >Summarize</button>
                   </div>
                   {searchResults && <p className="text-xs text-matrix-text-faint mb-2">{searchResults.length} results for "{searchQuery}"</p>}
                   <div className="space-y-2 max-h-[500px] overflow-y-auto">

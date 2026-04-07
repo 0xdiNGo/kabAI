@@ -26,6 +26,23 @@ SEARCH_TOOL_DEFINITION = {
         },
     },
 }
+SUMMARIZE_URL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "summarize_url",
+        "description": "Summarize a webpage or document URL. Use when a URL is mentioned in conversation and you need to understand its content before answering.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to summarize",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
 MAX_TOOL_ROUNDS = 3  # Prevent infinite tool-call loops
 
 
@@ -186,30 +203,40 @@ class LLMService:
         kwargs = await self._get_model_kwargs(model)
         full_messages = self._build_messages(messages, agent, context, exemplars)
 
-        # Tell the agent it has web search capability
+        # Build available tools and system message
+        settings = await self.settings_repo.get()
+        available_tools = [SEARCH_TOOL_DEFINITION]
+        tool_descriptions = (
+            "You have access to a web_search tool that can search the internet for current information. "
+            "When a question requires up-to-date facts, real-time data, or information not in your "
+            "knowledge base, use the web_search tool by calling it with a search query. "
+            "You can search multiple times to refine your results. "
+            "Do NOT tell the user you cannot search the web — you can."
+        )
+        if settings.kagi_summarizer_enabled:
+            available_tools.append(SUMMARIZE_URL_TOOL)
+            tool_descriptions += (
+                " You also have a summarize_url tool that can summarize any webpage or document. "
+                "Use it when a URL is mentioned and you need to understand its content."
+            )
+
         full_messages.insert(-1, {
             "role": "system",
-            "content": (
-                "You have access to a web_search tool that can search the internet for current information. "
-                "When a question requires up-to-date facts, real-time data, or information not in your "
-                "knowledge base, use the web_search tool by calling it with a search query. "
-                "You can search multiple times to refine your results. "
-                "Do NOT tell the user you cannot search the web — you can."
-            ),
+            "content": tool_descriptions,
         })
 
         # Try tool-use call. If the model doesn't support tools, fall back to regular streaming.
         try:
             yield json.dumps({"type": "status", "status": "connecting"})
 
-            # Agentic loop: let LLM call search tool, inject results, repeat
+            # Agentic loop: let LLM call search/summarize tools, inject results, repeat
             for round_num in range(MAX_TOOL_ROUNDS):
                 response = await litellm.acompletion(
                     model=model,
                     messages=full_messages,
                     temperature=agent.temperature if agent else 0.7,
                     max_tokens=agent.max_tokens if agent else 4096,
-                    tools=[SEARCH_TOOL_DEFINITION],
+                    tools=available_tools,
                     tool_choice="auto",
                     **kwargs,
                 )
@@ -254,6 +281,30 @@ class LLMService:
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "content": f"Search failed: {e}",
+                            })
+                    elif tool_call.function.name == "summarize_url":
+                        try:
+                            args = json.loads(tool_call.function.arguments)
+                            url = args.get("url", "")
+                            yield json.dumps({
+                                "type": "status", "status": "summarizing",
+                                "url": url,
+                            })
+                            api_key = await search_service.get_kagi_api_key()
+                            summary = await search_service.kagi_summarize(
+                                url=url, api_key=api_key,
+                                engine=settings.kagi_summarizer_engine,
+                            )
+                            full_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Summary of {url}:\n{summary}" if summary else f"Could not summarize {url}",
+                            })
+                        except Exception as e:
+                            full_messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": f"Summarization failed: {e}",
                             })
 
         except Exception:
