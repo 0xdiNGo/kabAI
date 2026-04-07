@@ -360,7 +360,10 @@ class LLMService:
             prompt = agent.system_prompt
             prompt += (
                 "\n\nFormat your responses using Markdown. Use headers, lists, "
-                "code blocks (with language tags), bold, and tables where appropriate."
+                "bold, and tables where appropriate. IMPORTANT: Always wrap code, "
+                "configuration, terminal output, ASCII art, and any monospaced content "
+                "in fenced code blocks (```language). Never use inline backticks for "
+                "multi-line code — always use a single fenced block."
             )
             if context:
                 prompt += (

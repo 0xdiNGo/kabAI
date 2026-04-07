@@ -16,8 +16,10 @@ export default function MarkdownContent({ content, className = "" }: Props) {
       components={{
         code({ className: codeClassName, children, ...props }) {
           const match = /language-(\w+)/.exec(codeClassName || "");
-          const inline = !match && !String(children).includes("\n");
-          if (inline) {
+          const text = String(children);
+          const hasNewlines = text.includes("\n");
+          const isBlock = match || hasNewlines || text.length > 120;
+          if (!isBlock) {
             return (
               <code className="rounded bg-matrix-bg/60 px-1.5 py-0.5 text-[0.85em] text-matrix-accent font-mono" {...props}>
                 {children}
@@ -90,6 +92,9 @@ export default function MarkdownContent({ content, className = "" }: Props) {
         },
         a({ href, children }) {
           return <a href={href} target="_blank" rel="noopener noreferrer" className="text-matrix-accent hover:underline">{children}</a>;
+        },
+        pre({ children }) {
+          return <div className="my-2 overflow-x-auto">{children}</div>;
         },
         hr() {
           return <hr className="my-3 border-matrix-text-faint/20" />;
