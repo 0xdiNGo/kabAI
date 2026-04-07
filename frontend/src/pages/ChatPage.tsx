@@ -212,53 +212,59 @@ const IDLE_PHRASES = [
   "about your car's extended warranty...",
 ];
 
-function ThinkingText() {
-  const [displayText, setDisplayText] = useState("");
-  const [phase, setPhase] = useState<"typing" | "visible" | "fading">("typing");
-  const [phraseIndex, setPhraseIndex] = useState(0);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+function ThinkingQuips() {
+  const [text, setText] = useState("");
+  const [fading, setFading] = useState(false);
+  const indexRef = useRef(0);
+  const charRef = useRef(0);
+  const phaseRef = useRef<"type" | "hold" | "fade">("type");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Shuffle all phrases once on mount
-  const shuffled = useRef<string[]>([]);
-  if (shuffled.current.length === 0) {
-    shuffled.current = [...IDLE_PHRASES].sort(() => Math.random() - 0.5);
-  }
+  const shuffled = useRef<string[]>(
+    [...IDLE_PHRASES].sort(() => Math.random() - 0.5)
+  );
 
   useEffect(() => {
-    const list = shuffled.current;
-    if (list.length === 0) return;
-    const target = list[phraseIndex % list.length] ?? "Thinking...";
+    const tick = () => {
+      const list = shuffled.current;
+      const phrase = list[indexRef.current % list.length] ?? "...";
 
-    if (phase === "typing") {
-      if (displayText.length < target.length) {
-        timeoutRef.current = setTimeout(() => {
-          setDisplayText(target.slice(0, displayText.length + 1));
-        }, 12);
+      if (phaseRef.current === "type") {
+        charRef.current++;
+        setText(phrase.slice(0, charRef.current));
+        setFading(false);
+        if (charRef.current >= phrase.length) {
+          phaseRef.current = "hold";
+          timerRef.current = setTimeout(tick, 600);
+        } else {
+          timerRef.current = setTimeout(tick, 12);
+        }
+      } else if (phaseRef.current === "hold") {
+        phaseRef.current = "fade";
+        setFading(true);
+        timerRef.current = setTimeout(tick, 350);
       } else {
-        setPhase("visible");
-        timeoutRef.current = setTimeout(() => setPhase("fading"), 600);
+        // fade done — advance
+        indexRef.current++;
+        charRef.current = 0;
+        phaseRef.current = "type";
+        setText("");
+        setFading(false);
+        timerRef.current = setTimeout(tick, 50);
       }
-    } else if (phase === "fading") {
-      timeoutRef.current = setTimeout(() => {
-        setPhraseIndex((i) => i + 1);
-        setDisplayText("");
-        setPhase("typing");
-      }, 350);
-    }
+    };
 
-    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
-  }, [displayText, phase, phraseIndex]);
+    timerRef.current = setTimeout(tick, 50);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
 
   return (
     <span
       className="text-sm text-matrix-text-dim inline-block transition-opacity duration-300"
-      style={{
-        opacity: phase === "fading" ? 0 : 1,
-        minWidth: "16rem",
-      }}
+      style={{ opacity: fading ? 0 : 1, minWidth: "16rem" }}
     >
-      {displayText}
-      {phase === "typing" && <span className="animate-pulse">|</span>}
+      {text}
+      {!fading && phaseRef.current === "type" && <span className="animate-pulse">|</span>}
     </span>
   );
 }
@@ -788,7 +794,7 @@ export default function ChatPage() {
                     <span className="h-2 w-2 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
                     <span className="h-2 w-2 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
-                  <ThinkingText />
+                  <ThinkingQuips />
                 </div>
               </div>
             </div>
