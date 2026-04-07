@@ -22,10 +22,24 @@ const codeTheme = {
 // Detect ANSI escape sequences
 const ANSI_REGEX = /\x1b\[[\d;]*m/;
 
+// Detect if content looks like ASCII art (lots of block/drawing chars or fixed-width lines)
+const ASCII_ART_REGEX = /[█▓▒░│─┌┐└┘├┤┬┴┼]{3,}|[#@|\\/_-]{10,}/;
+
+/** Pad all lines in a text block to consistent width */
+function normalizeLines(text: string): string {
+  const lines = text.split("\n");
+  if (lines.length < 3) return text;
+  const maxLen = Math.max(...lines.map((l) => l.length));
+  if (maxLen < 20) return text; // Not art
+  return lines.map((l) => l.padEnd(maxLen)).join("\n");
+}
+
 function CodeBlock({ text, language }: { text: string; language: string | null }) {
   const hasAnsi = ANSI_REGEX.test(text);
   const hasMirc = hasMircCodes(text);
   const hasColors = hasAnsi || hasMirc;
+  const isArt = ASCII_ART_REGEX.test(text);
+  const displayText = isArt && !hasColors ? normalizeLines(text) : text;
   const [showRaw, setShowRaw] = useState(false);
 
   return (
@@ -58,7 +72,7 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
             lineHeight: "1.2",
           }}
         >
-          <Ansi>{text}</Ansi>
+          <Ansi>{displayText}</Ansi>
         </div>
       ) : (
         <SyntaxHighlighter
@@ -76,7 +90,7 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
           }}
           codeTagProps={{ style: { background: "transparent" } }}
         >
-          {text}
+          {displayText}
         </SyntaxHighlighter>
       )}
     </div>

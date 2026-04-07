@@ -155,8 +155,41 @@ export function hasMircCodes(text: string): boolean {
   return /\\x0[23F]|\\x1[DF]|\\x16/i.test(text);
 }
 
+/**
+ * Count visible characters in a line (excluding mIRC control codes).
+ * Control codes: \x03[digits][,digits], \x0F, \x02, \x1F, \x1D, \x16
+ */
+function visibleLength(line: string): number {
+  // Strip mIRC escape sequences before counting
+  const stripped = line
+    .replace(/\\x03\d{0,2}(,\d{1,2})?/gi, "")
+    .replace(/\\x0[2F]|\\x1[DF]|\\x16/gi, "");
+  return stripped.length;
+}
+
+/** Pad each line of text to targetWidth visible characters. */
+function normalizeArtLines(text: string, targetWidth = 80): string {
+  const lines = text.split("\n");
+  if (lines.length < 2) return text; // Not multi-line art
+
+  // Find the max visible width
+  const maxWidth = Math.max(...lines.map(visibleLength));
+  const width = Math.max(maxWidth, targetWidth);
+
+  return lines
+    .map((line) => {
+      const vis = visibleLength(line);
+      if (vis < width) {
+        return line + " ".repeat(width - vis);
+      }
+      return line;
+    })
+    .join("\n");
+}
+
 export default function MircRenderer({ text }: { text: string }) {
-  const spans = parseMirc(text);
+  const normalized = normalizeArtLines(text);
+  const spans = parseMirc(normalized);
 
   return (
     <div
