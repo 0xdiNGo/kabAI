@@ -8,7 +8,6 @@ and updates counts periodically (not per-item).
 import asyncio
 import logging
 
-import litellm
 
 from app.models.knowledge_base import KnowledgeItem
 from app.repositories.ingest_queue_repo import IngestQueueRepository
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 1  # seconds between polls when idle
 BATCH_SIZE = 50  # process this many items per cycle
-CONCURRENT_AI_WORKERS = 5  # for AI title generation
 STALE_CHECK_INTERVAL = 30
 STALE_TIMEOUT = 120
 COUNT_UPDATE_INTERVAL = 50  # update KB item count every N items
@@ -87,17 +85,7 @@ class IngestWorker:
                 items = await self.queue_repo.claim_batch(BATCH_SIZE)
 
                 if items:
-                    # Separate scripted vs AI title items
-                    scripted = [i for i in items if not i.ai_titles]
-                    ai = [i for i in items if i.ai_titles]
-
-                    # Process scripted titles in bulk (instant)
-                    if scripted:
-                        await self._process_scripted_batch(scripted)
-
-                    # Process AI titles with concurrency
-                    if ai:
-                        await self._process_ai_batch(ai)
+                    await self._process_scripted_batch(items)
                 else:
                     await asyncio.sleep(POLL_INTERVAL)
 
@@ -143,66 +131,6 @@ class IngestWorker:
         # Periodic count updates
         await self._maybe_update_counts()
         await self._maybe_check_jobs()
-
-    async def _process_ai_batch(self, items: list) -> None:
-        """Process items needing AI titles with bounded concurrency."""
-        sem = asyncio.Semaphore(CONCURRENT_AI_WORKERS)
-
-        async def process_one(item):
-            async with sem:
-                try:
-                    await asyncio.wait_for(self._process_ai_item(item), timeout=STALE_TIMEOUT)
-                except asyncio.TimeoutError:
-                    await self.queue_repo.mark_failed(item.id, "AI title generation timed out")
-                except Exception as e:
-                    await self.queue_repo.mark_failed(item.id, str(e))
-
-        await asyncio.gather(*[process_one(i) for i in items])
-
-        for item in items:
-            self._items_since_count_update[item.kb_id] = \
-                self._items_since_count_update.get(item.kb_id, 0) + 1
-            self._items_since_job_check[item.job_id] = \
-                self._items_since_job_check.get(item.job_id, 0) + 1
-
-        await self._maybe_update_counts()
-        await self._maybe_check_jobs()
-
-    async def _process_ai_item(self, item) -> None:
-        """Generate AI title for a single item."""
-        model = await self._resolve_model(item.kb_id)
-        kwargs = await self.llm_service._get_model_kwargs(model)
-        response = await litellm.acompletion(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": (
-                    "Generate a brief title (under 10 words) for this documentation chunk. "
-                    "Return ONLY the title, no quotes or extra text.\n\n"
-                    f"{item.content[:2000]}"
-                ),
-            }],
-            temperature=0.2,
-            max_tokens=30,
-            **kwargs,
-        )
-        title = response.choices[0].message.content.strip().strip('"\'')[:200]
-        tokens = response.usage.total_tokens if response.usage else 0
-
-        ki = KnowledgeItem(
-            knowledge_base_id=item.kb_id,
-            batch_id=item.batch_id,
-            title=title,
-            content=item.content,
-            source=item.source,
-            chunk_index=item.chunk_index,
-        )
-        item_id = await self.knowledge_repo.add_item(ki)
-        await self.queue_repo.mark_done(item.id, title, tokens)
-
-        # Generate embedding and upsert to vector DB
-        if self.vector_service:
-            await self._embed_and_upsert([ki], [item_id])
 
     async def _maybe_update_counts(self) -> None:
         """Update KB item counts periodically, not per-item."""
@@ -278,21 +206,3 @@ class IngestWorker:
         except Exception as e:
             logger.warning("Vector embedding/upsert failed (non-fatal): %s", e)
 
-    async def _resolve_model(self, kb_id: str) -> str:
-        kb = await self.knowledge_repo.find_base_by_id(kb_id)
-        if kb and kb.ingest_model:
-            try:
-                enabled = await self.llm_service._get_enabled_provider_types()
-                if await self.llm_service._is_model_available(kb.ingest_model, enabled):
-                    return kb.ingest_model
-            except Exception:
-                pass
-        settings = await self.llm_service.settings_repo.get()
-        if settings.default_ingest_model:
-            try:
-                enabled = await self.llm_service._get_enabled_provider_types()
-                if await self.llm_service._is_model_available(settings.default_ingest_model, enabled):
-                    return settings.default_ingest_model
-            except Exception:
-                pass
-        return await self.llm_service.resolve_model(None)

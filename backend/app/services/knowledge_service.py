@@ -61,29 +61,6 @@ class KnowledgeService:
         # Status callback set by the API layer for background ingests
         self._status_callback = None
 
-    async def _maybe_summarize_url(self, url: str, body: str) -> str:
-        """Prepend a Kagi summary to content if summarizer is enabled."""
-        if not self.search_service:
-            return body
-        try:
-            settings = await self.llm_service.settings_repo.get()
-            if not settings.kagi_summarizer_enabled:
-                return body
-            api_key = await self.search_service.get_kagi_api_key()
-            if not api_key:
-                return body
-            self._update_status(f"Summarizing {url}")
-            summary = await self.search_service.kagi_summarize(
-                url=url, api_key=api_key,
-                summary_type="takeaway",
-                engine=settings.kagi_summarizer_engine,
-            )
-            if summary:
-                return f"# Summary\n{summary}\n\n---\n\n{body}"
-        except Exception as e:
-            logger.warning("Kagi summarize failed for %s: %s", url, e)
-        return body
-
     async def summarize_kb_items(
         self, kb_id: str, limit: int = 50,
     ) -> dict:
@@ -172,7 +149,6 @@ class KnowledgeService:
         self, kb_id: str, content: str, source: str | None = None,
         limits: IngestLimits | None = None,
         chunk_size: str = DEFAULT_CHUNK_SIZE,
-        ai_titles: bool = False,
     ) -> dict:
         """Chunk content and enqueue for persistent background processing.
 
@@ -205,7 +181,6 @@ class KnowledgeService:
                 content=chunk,
                 source=source,
                 chunk_index=i,
-                ai_titles=ai_titles,
             )
             for i, chunk in enumerate(chunks)
         ]
@@ -235,7 +210,6 @@ class KnowledgeService:
         split: str = "train",
         max_rows: int = 500,
         chunk_size: str = DEFAULT_CHUNK_SIZE,
-        ai_titles: bool = False,
     ) -> dict:
         """Import rows from a HuggingFace dataset into a knowledge base."""
         self._update_status("Detecting dataset format")
@@ -285,7 +259,7 @@ class KnowledgeService:
         source = f"HuggingFace: {repo_id}"
         result = await self.ingest(
             kb_id, content, source=source,
-            chunk_size=chunk_size, ai_titles=ai_titles,
+            chunk_size=chunk_size,
         )
         result["rows_processed"] = rows_fetched
         return result
@@ -376,8 +350,6 @@ class KnowledgeService:
         body = self._strip_html(raw_html) if "html" in content_type else raw_html
 
         # Kagi summarizer: prepend summary as lead content
-        body = await self._maybe_summarize_url(url, body)
-
         self._update_status(f"Chunking and titling content from {url}")
         total = await self.ingest(kb_id, body, source=url, limits=limits)
         urls_followed: list[str] = []
@@ -402,7 +374,6 @@ class KnowledgeService:
                     limits.urls_processed += 1
                     ct = resp.headers.get("content-type", "")
                     text = self._strip_html(resp.text) if "html" in ct else resp.text
-                    text = await self._maybe_summarize_url(related_url, text)
                     count = await self.ingest(kb_id, text, source=related_url, limits=limits)
                     total += count
                     urls_followed.append(related_url)

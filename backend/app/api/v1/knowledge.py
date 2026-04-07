@@ -51,14 +51,13 @@ class IngestRequest(BaseModel):
     content: str
     source: str | None = None
     chunk_size: str = "medium"  # small, medium, large, xlarge
-    ai_titles: bool = False  # Use LLM for titles (slower, costs tokens)
 
 
 class IngestURLRequest(BaseModel):
     url: str
     deep: bool = False
     chunk_size: str = "medium"
-    ai_titles: bool = False
+
     ai_deep_research: bool = False  # Use LLM for link selection (vs heuristic)
     rfc_analysis: bool = True  # Generate AI analysis comparing RFC versions
 
@@ -69,7 +68,7 @@ class IngestHFRequest(BaseModel):
     split: str = "train"
     max_rows: int = 500
     chunk_size: str = "medium"
-    ai_titles: bool = False
+
 
 
 @router.get("", response_model=list[KBResponse])
@@ -381,7 +380,7 @@ async def ingest_content(
     if not kb:
         raise NotFoundError("KnowledgeBase", kb_id)
 
-    result = await svc.ingest(kb_id, body.content, body.source, chunk_size=body.chunk_size, ai_titles=body.ai_titles)
+    result = await svc.ingest(kb_id, body.content, body.source, chunk_size=body.chunk_size)
     return {"status": "queued", **result}
 
 
@@ -431,7 +430,7 @@ async def ingest_huggingface(
     coro = svc.ingest_huggingface_dataset(
         kb_id, body.repo_id, hf_svc,
         subset=body.subset, split=body.split, max_rows=body.max_rows,
-        chunk_size=body.chunk_size, ai_titles=body.ai_titles,
+        chunk_size=body.chunk_size,
     )
     await mgr.start_ingest(kb_id, coro)
     return {"status": "started", "kb_id": kb_id}

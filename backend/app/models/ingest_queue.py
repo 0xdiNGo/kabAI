@@ -11,7 +11,6 @@ class IngestQueueItem(BaseModel):
     content: str
     source: str | None = None
     chunk_index: int = 0
-    ai_titles: bool = False  # Use LLM for title generation (slower, costs tokens)
     state: str = "pending"  # pending | processing | done | failed
     title: str | None = None
     tokens_used: int = 0

@@ -53,7 +53,6 @@ export default function KnowledgeBasePage() {
   const [aiDeepResearch, setAiDeepResearch] = useState(false);
   const [rfcAnalysis, setRfcAnalysis] = useState(true);
   const [chunkSize, setChunkSize] = useState("medium");
-  const [aiTitles, setAiTitles] = useState(false);
   const [hfRepoId, setHfRepoId] = useState("");
   const [hfSubset, setHfSubset] = useState("");
   const [hfMaxRows, setHfMaxRows] = useState("500");
@@ -236,7 +235,7 @@ export default function KnowledgeBasePage() {
   const ingest = async () => {
     if (!selectedKB || !ingestText.trim()) return;
     setIngesting(true); setIngestResult("");     try {
-      await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, { content: ingestText, source: ingestSource || null, chunk_size: chunkSize, ai_titles: aiTitles });
+      await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, { content: ingestText, source: ingestSource || null, chunk_size: chunkSize });
       setIngestText(""); setIngestSource(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
   };
@@ -245,7 +244,7 @@ export default function KnowledgeBasePage() {
     if (!selectedKB || !ingestUrl.trim()) return;
     setIngesting(true); setIngestResult("");     try {
       await api.post(`/knowledge-bases/${selectedKB.id}/ingest-url`, {
-        url: ingestUrl, deep: deepResearch, chunk_size: chunkSize, ai_titles: aiTitles,
+        url: ingestUrl, deep: deepResearch, chunk_size: chunkSize,
         ai_deep_research: aiDeepResearch, rfc_analysis: rfcAnalysis,
       });
       setIngestUrl(""); startPolling();
@@ -259,7 +258,7 @@ export default function KnowledgeBasePage() {
       await api.post(`/knowledge-bases/${selectedKB.id}/ingest-hf`, {
         repo_id: hfRepoId.trim(), subset: hfSubset.trim() || undefined,
         split: "train", max_rows: parseInt(hfMaxRows, 10) || 500,
-        chunk_size: chunkSize, ai_titles: aiTitles,
+        chunk_size: chunkSize,
       });
       setHfRepoId(""); startPolling();
     } catch (err) { setIngesting(false); setIngestResult(err instanceof Error ? err.message : "Failed"); }
@@ -327,7 +326,7 @@ export default function KnowledgeBasePage() {
       if (content.length <= UPLOAD_SEGMENT_SIZE) {
         // Small file — single request
         await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, {
-          content, source, chunk_size: chunkSize, ai_titles: aiTitles,
+          content, source, chunk_size: chunkSize,
         });
       } else {
         // Large file — split into segments and upload each
@@ -348,7 +347,7 @@ export default function KnowledgeBasePage() {
 
           setIngestResult(`Uploading segment ${i + 1} of ${totalSegments}...`);
           await api.post(`/knowledge-bases/${selectedKB.id}/ingest`, {
-            content: segment, source: segSource, chunk_size: chunkSize, ai_titles: aiTitles,
+            content: segment, source: segSource, chunk_size: chunkSize,
           });
         }
       }
@@ -662,14 +661,11 @@ export default function KnowledgeBasePage() {
                           {/* Chunk size selector */}
                           <div className="space-y-1">
                             <p className="text-xs text-matrix-text-dim mb-2">
-                              {aiTitles
-                                ? "Select chunk size — each chunk costs one LLM call for title generation:"
-                                : "Select chunk size — smaller chunks improve retrieval accuracy, larger chunks preserve more context:"}
+                              Select chunk size — smaller chunks improve retrieval accuracy, larger chunks preserve more context:
                             </p>
                             {sizes.map((sz) => {
                               const chunks = Math.max(1, Math.ceil(charCount / sz.target));
-                              const titleTokens = aiTitles ? chunks * 550 : 0;
-                              const displayTokens = aiTitles ? tokEstimate + titleTokens : tokEstimate;
+                              const displayTokens = tokEstimate;
                               const selected = chunkSize === sz.key;
                               const suggested = a?.suggested_chunk_size === sz.key;
                               return (
@@ -690,28 +686,16 @@ export default function KnowledgeBasePage() {
                                     <span className={`text-sm ${selected ? "text-matrix-accent" : "text-matrix-text-dim"}`}>
                                       {chunks} chunk{chunks !== 1 ? "s" : ""}
                                     </span>
-                                    {aiTitles ? (
-                                      <span className="text-xs text-matrix-text-faint ml-2">
-                                        ~{displayTokens.toLocaleString()} tok total
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-matrix-text-faint ml-2">
-                                        ~{displayTokens.toLocaleString()} tok content
-                                      </span>
-                                    )}
+                                    <span className="text-xs text-matrix-text-faint ml-2">
+                                      ~{displayTokens.toLocaleString()} tok
+                                    </span>
                                   </div>
                                 </button>
                               );
                             })}
                           </div>
 
-                          <div className="flex items-center justify-between">
-                            <label className="flex items-center gap-1.5 cursor-pointer">
-                              <input type="checkbox" checked={aiTitles} onChange={(e) => setAiTitles(e.target.checked)}
-                                className="h-3.5 w-3.5 rounded accent-matrix-accent" />
-                              <span className="text-xs text-matrix-text-dim">AI titles</span>
-                              <span className="text-xs text-matrix-text-faint">{aiTitles ? "(LLM-generated, uses tokens)" : "(off — scripted titles, no LLM cost)"}</span>
-                            </label>
+                          <div className="flex items-center justify-end">
                             <button onClick={ingestStagedFile} disabled={ingesting}
                               className="rounded-lg bg-matrix-accent px-6 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                               {ingesting ? "Ingesting..." : "Ingest File"}
