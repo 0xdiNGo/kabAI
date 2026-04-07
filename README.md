@@ -4,13 +4,13 @@
 
 ---
 
-A self-hosted agent orchestration platform for building agents that think together. Configure agents with distinct expertise and personalities, ground them in knowledge bases with hybrid vector+keyword retrieval, and run structured roundtable discussions where multiple agents debate, critique, and synthesize until they reach consensus. Solo chat when you need a quick answer. Roundtable when you need the right one.
+A self-hosted agent orchestration platform for building agents that think together. Configure agents with distinct expertise and personalities, ground them in knowledge bases with hybrid vector+keyword retrieval, and run structured kabbalah discussions where multiple agents debate, critique, and synthesize until they reach consensus. Solo chat when you need a quick answer. Kabbalah when you need the right one.
 
 Built on FastAPI, React, and MongoDB with support for any LLM provider through litellm — Ollama, OpenAI, Anthropic, Google. Hybrid retrieval combines Qdrant vector search with MongoDB keyword search for knowledge bases that scale to millions of items. Persistent background processing handles large-scale ingestion with crash recovery. LoRA adapters, web search via tool use, exemplar sets for few-shot reasoning, and HuggingFace integration for pulling datasets and adapters. Runs entirely on your infrastructure — Docker Compose brings up the full stack in one command, every API key is Fernet-encrypted at rest, and no data leaves your network unless you configure an external provider.
 
 ## Features
 
-- Multi-agent roundtable discussions with configurable rounds and consensus detection
+- Multi-agent kabbalah discussions with configurable rounds and consensus detection
 - 6 collaboration roles: orchestrator, specialist, critic, synthesizer, researcher, devil's advocate
 - Knowledge bases with hybrid vector+keyword retrieval (Qdrant + MongoDB)
 - Ingestion from text, URLs, files, IETF RFCs, and HuggingFace datasets
@@ -90,7 +90,7 @@ kabai/
 │   │   ├── repositories/      # MongoDB data access layer
 │   │   ├── schemas/           # Request/response DTOs
 │   │   ├── services/          # Business logic
-│   │   │   ├── orchestration/ # Roundtable multi-agent collaboration
+│   │   │   ├── orchestration/ # Kabbalah multi-agent collaboration
 │   │   │   ├── llm_service.py         # LLM calls + model resolution
 │   │   │   ├── vector_service.py      # Qdrant embeddings + vector search
 │   │   │   ├── knowledge_service.py   # Knowledge base CRUD + hybrid retrieval

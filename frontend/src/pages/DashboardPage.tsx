@@ -34,7 +34,7 @@ export default function DashboardPage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [hfEnabled, setHfEnabled] = useState(false);
-  const [roundtableMode, setRoundtableMode] = useState(false);
+  const [kabbalahMode, setKabbalahMode] = useState(false);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
@@ -151,15 +151,15 @@ export default function DashboardPage() {
     );
   };
 
-  const startRoundtable = async () => {
+  const startKabbalah = async () => {
     if (selectedAgentIds.length < 2) return;
     const names = agents
       .filter((a) => selectedAgentIds.includes(a.id))
       .map((a) => a.name);
     const res = await api.post<{ id: string }>("/conversations", {
       agent_ids: selectedAgentIds,
-      collaboration_mode: "roundtable",
-      title: `Roundtable: ${names.join(", ")}`,
+      collaboration_mode: "kabbalah",
+      title: `Kabbalah: ${names.join(", ")}`,
     });
     navigate(`/chat/${res.id}`);
   };
@@ -210,10 +210,10 @@ export default function DashboardPage() {
           <h2 className="text-lg font-semibold">Agents <span className="text-sm text-matrix-text-faint font-normal">({agentTotal})</span></h2>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { setRoundtableMode(!roundtableMode); setSelectedAgentIds([]); }}
-              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${roundtableMode ? "bg-matrix-purple text-matrix-bg" : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"}`}
+              onClick={() => { setKabbalahMode(!kabbalahMode); setSelectedAgentIds([]); }}
+              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${kabbalahMode ? "bg-matrix-purple text-matrix-bg" : "bg-matrix-input text-matrix-text hover:bg-matrix-hover"}`}
             >
-              Roundtable
+              Kabbalah
             </button>
           </div>
         </div>
@@ -245,17 +245,17 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {roundtableMode && (
+        {kabbalahMode && (
           <div className="mb-4 flex items-center justify-between rounded-lg bg-matrix-purple/10 border border-matrix-purple-dim px-4 py-3">
             <span className="text-sm text-matrix-purple">
-              Select 2 or more agents for a roundtable discussion
+              Select 2 or more agents for a kabbalah discussion
             </span>
             <button
-              onClick={startRoundtable}
+              onClick={startKabbalah}
               disabled={selectedAgentIds.length < 2}
               className="rounded-lg bg-matrix-purple px-4 py-2 text-sm font-medium hover:bg-matrix-purple-dim disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              Start Roundtable ({selectedAgentIds.length} selected)
+              Start Kabbalah ({selectedAgentIds.length} selected)
             </button>
           </div>
         )}
@@ -263,7 +263,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent) => {
             const isSelected = selectedAgentIds.includes(agent.id);
-            return roundtableMode ? (
+            return kabbalahMode ? (
               <button
                 key={agent.id}
                 onClick={() => toggleAgentSelection(agent.id)}
@@ -392,7 +392,7 @@ export default function DashboardPage() {
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none" />
                       </div>
                       <div>
-                        <label className="block text-xs text-matrix-text-faint mb-1">Collaboration Role<HelpTip text="How this agent behaves in roundtable discussions." /></label>
+                        <label className="block text-xs text-matrix-text-faint mb-1">Collaboration Role<HelpTip text="How this agent behaves in kabbalah discussions." /></label>
                         <select value={editForm.collaboration_role}
                           onChange={(e) => setEditForm({ ...editForm, collaboration_role: e.target.value, collaboration_capable: e.target.value !== "" })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
@@ -463,8 +463,8 @@ export default function DashboardPage() {
             );
           })}
 
-          {/* Raw model card (not in roundtable mode) */}
-          {!roundtableMode && (
+          {/* Raw model card (not in kabbalah mode) */}
+          {!kabbalahMode && (
             <div className="rounded-xl bg-matrix-card p-5">
               <h3 className="font-semibold">Direct Model Chat</h3>
               <p className="mt-1 text-sm text-matrix-text-dim">Chat directly with any available model</p>

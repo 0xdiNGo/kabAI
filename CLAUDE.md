@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-kabAI is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via roundtable mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus. The platform includes a knowledge base system with hybrid vector+keyword retrieval (via Qdrant) for ingesting and organizing reference material (text, URLs, files, RFCs, HuggingFace datasets) that agents can draw on. Chat responses are rendered as rich markdown.
+kabAI is a multi-agent AI chat platform. Users select from configured AI agents (or raw models) to chat with. Agents can collaborate via kabbalah mode — multi-round discussions where agents take turns, respond to each other, and work toward consensus. The platform includes a knowledge base system with hybrid vector+keyword retrieval (via Qdrant) for ingesting and organizing reference material (text, URLs, files, RFCs, HuggingFace datasets) that agents can draw on. Chat responses are rendered as rich markdown.
 
 ## Tech Stack
 
@@ -90,16 +90,16 @@ LLM streaming is decoupled from SSE connections via `BackgroundTaskManager` (sin
 
 Admin-configurable `max_background_chats` limit. Excess tasks are cancelled (oldest first).
 
-### Multi-Agent Roundtable (`services/orchestration/`)
+### Multi-Agent Kabbalah (`services/orchestration/`)
 
-Roundtable mode: multiple agents discuss a topic across configurable rounds (default 3).
+Kabbalah mode: multiple agents discuss a topic across configurable rounds (default 3).
 
 - Each round: every agent responds in turn, seeing the full thread including other agents' responses
 - Agents can `[PASS]` when they have nothing to add
 - Consensus: if majority passes in a round, discussion ends early
 - Between rounds: a system message prompts agents to build on each other's points
 
-**Collaboration roles** shape agent behavior in roundtables:
+**Collaboration roles** shape agent behavior in kabbalahs:
 - `orchestrator` — guides discussion, delegates, drives decisions
 - `specialist` — deep domain expertise
 - `critic` — evaluates ideas, finds flaws
@@ -200,7 +200,7 @@ All endpoints under `/api/v1`:
 - **Agents**: CRUD + bulk-model + export/import + `POST /agents/build` (AI agent builder)
 - **Providers**: CRUD + model enumeration + test connectivity + `POST /{provider_id}/ollama/create-model` + `POST /{provider_id}/ollama/delete-model`
 - **Conversations**: CRUD + streaming (with background task support) + status + event reconnection
-- **Settings**: get/update system settings (default model, max background chats, roundtable rounds, `huggingface_enabled`, `huggingface_token_encrypted`, `embedding_model`)
+- **Settings**: get/update system settings (default model, max background chats, kabbalah rounds, `huggingface_enabled`, `huggingface_token_encrypted`, `embedding_model`)
 - **Knowledge Bases**: CRUD + ingestion (text/URL/file/RFC/HuggingFace) + batch status + items listing + queue status + `POST /{kb_id}/ingest-hf` + `POST /{kb_id}/ingest-cancel` + `GET /{kb_id}/jobs` + `DELETE /{kb_id}/jobs/{job_id}` + `GET /queue-status`
 - **Search Providers**: CRUD + set-default + test connectivity
 - **Exemplar Sets**: CRUD + pair management + HuggingFace import

@@ -20,11 +20,11 @@ class Conversation(BaseModel):
     user_id: str
     title: str | None = None
     agent_id: str | None = None  # None for raw model chat
-    agent_ids: list[str] = Field(default_factory=list)  # for roundtable
+    agent_ids: list[str] = Field(default_factory=list)  # for kabbalah
     model: str | None = None  # set for raw model chats
     messages: list[Message] = Field(default_factory=list)
     is_collaboration: bool = False
-    collaboration_mode: str | None = None  # "roundtable" | "orchestrator"
+    collaboration_mode: str | None = None  # "kabbalah" | "orchestrator"
     summary: str | None = None  # AI-generated one-line summary
     last_agent_name: str | None = None  # Name of the last agent to respond
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

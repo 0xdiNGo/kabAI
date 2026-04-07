@@ -88,7 +88,7 @@ export default function ProvidersPage() {
     api.get<{
       default_model: string | null; default_ingest_model: string | null;
       embedding_model: string | null;
-      max_background_chats: number; roundtable_max_rounds: number;
+      max_background_chats: number; kabbalah_max_rounds: number;
       ingest_max_items: number; ingest_max_urls: number;
       kagi_summarizer_enabled: boolean; kagi_summarizer_engine: string;
       huggingface_enabled: boolean; huggingface_has_token: boolean;
@@ -101,8 +101,8 @@ export default function ProvidersPage() {
       setSelectedEmbedding(s.embedding_model ?? "");
       setMaxBackgroundChats(s.max_background_chats);
       setEditMaxBg(String(s.max_background_chats));
-      setMaxRounds(s.roundtable_max_rounds);
-      setEditMaxRounds(String(s.roundtable_max_rounds));
+      setMaxRounds(s.kabbalah_max_rounds);
+      setEditMaxRounds(String(s.kabbalah_max_rounds));
       setIngestMaxItems(s.ingest_max_items);
       setEditIngestMaxItems(String(s.ingest_max_items));
       setIngestMaxUrls(s.ingest_max_urls);
@@ -154,7 +154,7 @@ export default function ProvidersPage() {
   const saveMaxRounds = async () => {
     const val = parseInt(editMaxRounds, 10);
     if (isNaN(val) || val < 1) return;
-    await api.put("/settings", { roundtable_max_rounds: val });
+    await api.put("/settings", { kabbalah_max_rounds: val });
     setMaxRounds(val);
   };
 
@@ -403,9 +403,9 @@ export default function ProvidersPage() {
         </div>
       </div>
 
-      {/* Roundtable Rounds */}
+      {/* Kabbalah Rounds */}
       <div className="mb-6 rounded-xl bg-matrix-card p-5">
-        <h2 className="font-semibold mb-3">Roundtable Discussion Rounds</h2>
+        <h2 className="font-semibold mb-3">Kabbalah Discussion Rounds</h2>
         <p className="text-sm text-matrix-text-dim mb-3">
           How many rounds agents discuss before stopping. Agents pass when they have nothing to add — majority passing ends early.
         </p>
