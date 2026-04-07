@@ -50,8 +50,13 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
         <MircRenderer text={text} />
       ) : hasAnsi && !showRaw ? (
         <div
-          className="overflow-x-auto rounded-lg font-mono text-[0.8rem] leading-relaxed whitespace-pre"
-          style={{ background: "#1d2021", padding: "1rem" }}
+          className="overflow-x-auto rounded-lg text-[0.8rem] whitespace-pre"
+          style={{
+            background: "#1d2021",
+            padding: "1rem",
+            fontFamily: "'Courier New', Courier, monospace",
+            lineHeight: "1.2",
+          }}
         >
           <Ansi>{text}</Ansi>
         </div>
@@ -66,6 +71,8 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
             fontSize: "0.8rem",
             background: "#1d2021",
             padding: "1rem",
+            fontFamily: "'Courier New', Courier, monospace",
+            lineHeight: "1.2",
           }}
           codeTagProps={{ style: { background: "transparent" } }}
         >

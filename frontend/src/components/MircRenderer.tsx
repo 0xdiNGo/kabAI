@@ -160,8 +160,14 @@ export default function MircRenderer({ text }: { text: string }) {
 
   return (
     <div
-      className="overflow-x-auto rounded-lg font-mono text-[0.8rem] leading-snug whitespace-pre"
-      style={{ background: "#1d2021", padding: "1rem" }}
+      className="overflow-x-auto rounded-lg text-[0.8rem] leading-none whitespace-pre"
+      style={{
+        background: "#1d2021",
+        padding: "1rem",
+        fontFamily: "'Courier New', Courier, monospace",
+        letterSpacing: "0px",
+        lineHeight: "1.2",
+      }}
     >
       {spans.map((span, i) => {
         const fgColor = span.reverse

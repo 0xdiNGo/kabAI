@@ -364,8 +364,11 @@ class LLMService:
                 "configuration, terminal output, ASCII art, and any monospaced content "
                 "in fenced code blocks (```language). Never use inline backticks for "
                 "multi-line code — always use a single fenced block. "
-                "For ASCII art, use extended Unicode block characters (█▓▒░▄▀│─┌┐└┘├┤┬┴┼) "
-                "in a plain code block. For colored IRC/terminal art, use mIRC color codes: "
+                "For ASCII art, use ONLY width-safe monospace characters: "
+                "█ (full block), #, @, -, _, /, \\, |, and spaces. "
+                "Pad every line to exactly 80 characters with spaces for alignment. "
+                "Do NOT use ▓▒░▄▀ — they render at inconsistent widths. "
+                "For colored IRC art, use mIRC color codes: "
                 "\\x03FG,BG for colors (0-15), \\x0F to reset, \\x02 for bold."
             )
             if context:
