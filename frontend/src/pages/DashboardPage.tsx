@@ -167,42 +167,8 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">kabAI</h1>
-        {user?.role === "admin" && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => navigate("/knowledge-bases")}
-              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
-            >
-              Knowledge Bases
-            </button>
-            <button
-              onClick={() => navigate("/exemplar-sets")}
-              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
-            >
-              Exemplar Sets
-            </button>
-            <button
-              onClick={() => navigate("/agents/manage")}
-              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
-            >
-              Manage Agents
-            </button>
-            <button
-              onClick={() => navigate("/search-providers")}
-              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
-            >
-              Search
-            </button>
-            <button
-              onClick={() => navigate("/providers")}
-              className="rounded-lg bg-matrix-card px-4 py-2 text-sm text-matrix-text hover:bg-matrix-input transition-colors"
-            >
-              Manage Providers
-            </button>
-          </div>
-        )}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
       </div>
 
       {/* Agents Grid */}
