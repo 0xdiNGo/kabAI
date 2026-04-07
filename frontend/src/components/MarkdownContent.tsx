@@ -3,6 +3,19 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
+// Override oneDark background to match gruvbox
+const codeTheme = {
+  ...oneDark,
+  'pre[class*="language-"]': {
+    ...oneDark['pre[class*="language-"]'],
+    background: "#1d2021",
+  },
+  'code[class*="language-"]': {
+    ...oneDark['code[class*="language-"]'],
+    background: "#1d2021",
+  },
+};
+
 interface Props {
   content: string;
   className?: string;
@@ -35,7 +48,7 @@ export default function MarkdownContent({ content, className = "" }: Props) {
                 Copy
               </button>
               <SyntaxHighlighter
-                style={oneDark}
+                style={codeTheme}
                 language={match?.[1] || "text"}
                 PreTag="div"
                 customStyle={{
@@ -45,6 +58,7 @@ export default function MarkdownContent({ content, className = "" }: Props) {
                   background: "#1d2021",
                   padding: "1rem",
                 }}
+                codeTagProps={{ style: { background: "transparent" } }}
               >
                 {String(children).replace(/\n$/, "")}
               </SyntaxHighlighter>
