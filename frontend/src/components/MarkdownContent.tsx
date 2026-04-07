@@ -1,108 +1,18 @@
-import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import Ansi from "ansi-to-react";
-import MircRenderer, { hasMircCodes } from "@/components/MircRenderer";
-
-// Override oneDark background to match gruvbox
-const codeTheme = {
-  ...oneDark,
-  'pre[class*="language-"]': {
-    ...oneDark['pre[class*="language-"]'],
-    background: "#1d2021",
-  },
-  'code[class*="language-"]': {
-    ...oneDark['code[class*="language-"]'],
-    background: "#1d2021",
-  },
-};
+import TerminalBlock, { hasMircCodes } from "@/components/TerminalBlock";
+import CodeEditor from "@/components/CodeEditor";
 
 // Detect ANSI escape sequences
 const ANSI_REGEX = /\x1b\[[\d;]*m/;
 
-// Detect if content looks like ASCII art (lots of block/drawing chars or fixed-width lines)
-const ASCII_ART_REGEX = /[█▓▒░│─┌┐└┘├┤┬┴┼]{3,}|[#@|\\/_-]{10,}/;
-
-/** Pad all lines in a text block to consistent width */
-function normalizeLines(text: string): string {
-  const lines = text.split("\n");
-  if (lines.length < 3) return text;
-  const maxLen = Math.max(...lines.map((l) => l.length));
-  if (maxLen < 20) return text; // Not art
-  return lines.map((l) => l.padEnd(maxLen)).join("\n");
-}
-
-function CodeBlock({ text, language }: { text: string; language: string | null }) {
-  const hasAnsi = ANSI_REGEX.test(text);
-  const hasMirc = hasMircCodes(text);
-  const hasColors = hasAnsi || hasMirc;
-  const isArt = ASCII_ART_REGEX.test(text);
-  const displayText = isArt && !hasColors ? normalizeLines(text) : text;
-  const [showRaw, setShowRaw] = useState(false);
-
-  return (
-    <div className="relative group/code my-2">
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/code:opacity-100 transition-opacity z-10">
-        {hasColors && (
-          <button
-            onClick={() => setShowRaw(!showRaw)}
-            className="rounded bg-matrix-bg/70 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright"
-          >
-            {showRaw ? "Color" : "Raw"}
-          </button>
-        )}
-        <button
-          onClick={() => navigator.clipboard.writeText(text)}
-          className="rounded bg-matrix-bg/70 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright"
-        >
-          Copy
-        </button>
-      </div>
-      {hasMirc && !showRaw ? (
-        <MircRenderer text={text} />
-      ) : hasAnsi && !showRaw ? (
-        <div
-          className="overflow-x-auto rounded-lg text-[0.8rem] whitespace-pre"
-          style={{
-            background: "#1d2021",
-            padding: "1rem",
-            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', monospace",
-            lineHeight: "1.2",
-          }}
-        >
-          <Ansi>{displayText}</Ansi>
-        </div>
-      ) : (
-        <SyntaxHighlighter
-          style={codeTheme}
-          language={language || "text"}
-          PreTag="div"
-          customStyle={{
-            margin: 0,
-            borderRadius: "0.5rem",
-            fontSize: "0.8rem",
-            background: "#1d2021",
-            padding: "1rem",
-            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', monospace",
-            lineHeight: "1.2",
-          }}
-          codeTagProps={{ style: { background: "transparent" } }}
-        >
-          {displayText}
-        </SyntaxHighlighter>
-      )}
-    </div>
-  );
-}
-
 interface Props {
   content: string;
   className?: string;
+  onExport?: (content: string, format: string, metadata?: Record<string, string>) => void;
 }
 
-export default function MarkdownContent({ content, className = "" }: Props) {
+export default function MarkdownContent({ content, className = "", onExport }: Props) {
   return (
     <ReactMarkdown
       className={`markdown-content ${className}`}
@@ -113,6 +23,7 @@ export default function MarkdownContent({ content, className = "" }: Props) {
           const text = String(children);
           const hasNewlines = text.includes("\n");
           const isBlock = match || hasNewlines || text.length > 120;
+
           if (!isBlock) {
             return (
               <code className="rounded bg-matrix-bg/60 px-1.5 py-0.5 text-[0.85em] text-matrix-accent font-mono">
@@ -120,7 +31,18 @@ export default function MarkdownContent({ content, className = "" }: Props) {
               </code>
             );
           }
-          return <CodeBlock text={text.replace(/\n$/, "")} language={match?.[1] || null} />;
+
+          const cleaned = text.replace(/\n$/, "");
+          const hasAnsi = ANSI_REGEX.test(cleaned);
+          const hasMirc = hasMircCodes(cleaned);
+
+          // Terminal content → xterm.js
+          if (hasMirc || hasAnsi) {
+            return <TerminalBlock text={cleaned} />;
+          }
+
+          // Code → Monaco Editor
+          return <CodeEditor text={cleaned} language={match?.[1] || null} onExport={onExport} />;
         },
         p({ children }) {
           return <p className="mb-2 last:mb-0">{children}</p>;

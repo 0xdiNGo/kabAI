@@ -21,8 +21,9 @@
     "lucide-react": "^0.468.0",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
-    "react-syntax-highlighter": "^15.6.1",
-    "ansi-to-react": "^6.1.6"
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@monaco-editor/react": "^4.6.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",
@@ -33,7 +34,6 @@
     "tailwindcss": "^3.4.17",
     "typescript": "~5.6.3",
     "vite": "^6.0.5",
-    "eslint": "^9.16.0",
-    "@types/react-syntax-highlighter": "^15.5.13"
+    "eslint": "^9.16.0"
   }
 }
