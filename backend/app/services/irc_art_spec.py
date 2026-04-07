@@ -22,10 +22,13 @@ EXTENDED COLORS (16-98): 83 additional colors available for fine gradients.
 16-27: dark reds/greens/blues, 28-51: mid saturation, 52-87: vivid neons, 88-98: grayscale.
 
 LINE RULES:
-- EXACTLY 80 visible characters per line. Control codes don't count.
+- EXACTLY 80 visible characters per line. NO MORE. NO LESS.
+- Control codes (\\x03NN,NN and \\x0F etc) do NOT count as visible.
+- Only printable characters count: letters, numbers, symbols, spaces, █▀▄░▒▓, box drawing.
 - Maximum 510 bytes per line (IRC protocol limit).
 - Pad short lines with spaces to 80. End every line with \\x0F.
-- Count visible chars AFTER stripping all \\x03NN,NN and control codes.
+- VERIFY: strip all \\x03[digits][,digits] and \\x0F/\\x02/\\x1D/\\x1F/\\x16, then count. Must be 80.
+- Common mistake: borders (═║) count as visible chars. A line with ║ + 78 content + ║ = 80.
 
 CHARACTERS:
 - Block fills: █ (solid), ▀▄ (half blocks for 2x vertical resolution)
