@@ -8,10 +8,12 @@ import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
 import ExemplarSetPage from "@/pages/ExemplarSetPage";
 import SearchProvidersPage from "@/pages/SearchProvidersPage";
 import AppLayout from "@/components/layout/AppLayout";
+import CommandPalette from "@/components/CommandPalette";
 
 export default function AppRoutes() {
   return (
     <BrowserRouter>
+      <CommandPalette />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<AppLayout />}>
