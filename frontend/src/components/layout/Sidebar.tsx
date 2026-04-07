@@ -73,8 +73,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         onClick={() => navigate("/")}
         className="flex items-center gap-2 px-4 py-4 text-matrix-text-bright hover:text-matrix-accent transition-colors"
       >
-        <span className="text-lg font-bold shrink-0">k</span>
-        {!collapsed && <span className="text-lg font-bold">abAI</span>}
+        <span className="text-lg font-bold shrink-0">{collapsed ? "k" : "kabAI"}</span>
       </button>
 
       {/* Main nav */}
