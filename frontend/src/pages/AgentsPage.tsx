@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { Agent } from "@/types/agent";
 import type { ModelInfo } from "@/types/provider";
@@ -90,7 +90,6 @@ export default function AgentsPage() {
   const [building, setBuilding] = useState(false);
   const [builderResult, setBuilderResult] = useState<Record<string, unknown> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -341,13 +340,7 @@ export default function AgentsPage() {
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <button
-            onClick={() => navigate("/")}
-            className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors"
-          >
-            &larr; Back to Dashboard
-          </button>
-          <h1 className="text-2xl font-bold mt-1">Agents</h1>
+          <h1 className="text-2xl font-bold">Agents</h1>
         </div>
         {!showForm && (
           <div className="flex gap-2">

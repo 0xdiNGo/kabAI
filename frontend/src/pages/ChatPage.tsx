@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { streamPost } from "@/lib/sse";
 import { HelpTip } from "@/components/Tooltip";
@@ -323,7 +323,6 @@ export default function ChatPage() {
   };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (!conversationId) return;
@@ -665,16 +664,10 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       {/* Header */}
       <header className="border-b border-matrix-border px-6 py-3 flex items-center justify-between">
         <div>
-          <button
-            onClick={() => navigate("/")}
-            className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors"
-          >
-            &larr; Dashboard
-          </button>
           <h1 className="font-semibold">{title ?? "Chat"}</h1>
         </div>
         <div className="flex items-center gap-2">

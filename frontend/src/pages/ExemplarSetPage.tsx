@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
 interface ES { id: string; name: string; description: string; source_dataset: string | null; pair_count: number; }
@@ -22,8 +21,6 @@ export default function ExemplarSetPage() {
   const [hfMaxPairs, setHfMaxPairs] = useState("50");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState("");
-  const navigate = useNavigate();
-
   const loadSets = () => { api.get<ES[]>("/exemplar-sets").then(setSets).catch(() => {}); };
   const loadPairs = async (es: ES) => { setPairs(await api.get<Pair[]>(`/exemplar-sets/${es.id}/pairs`)); };
 
@@ -94,8 +91,7 @@ export default function ExemplarSetPage() {
     <div className="mx-auto max-w-6xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <button onClick={() => navigate("/")} className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors">&larr; Dashboard</button>
-          <h1 className="text-2xl font-bold mt-1">Exemplar Sets</h1>
+          <h1 className="text-2xl font-bold">Exemplar Sets</h1>
           <p className="text-sm text-matrix-text-dim mt-1">Few-shot conversation pairs that shape how agents reason</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">

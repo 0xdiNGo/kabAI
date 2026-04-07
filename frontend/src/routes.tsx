@@ -1,5 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useAuthStore } from "@/stores/authStore";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import ChatPage from "@/pages/ChatPage";
@@ -8,74 +7,22 @@ import AgentsPage from "@/pages/AgentsPage";
 import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
 import ExemplarSetPage from "@/pages/ExemplarSetPage";
 import SearchProvidersPage from "@/pages/SearchProvidersPage";
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
+import AppLayout from "@/components/layout/AppLayout";
 
 export default function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <DashboardPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/agents/manage"
-          element={
-            <ProtectedRoute>
-              <AgentsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/knowledge-bases"
-          element={
-            <ProtectedRoute>
-              <KnowledgeBasePage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/exemplar-sets"
-          element={
-            <ProtectedRoute>
-              <ExemplarSetPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/search-providers"
-          element={
-            <ProtectedRoute>
-              <SearchProvidersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/providers"
-          element={
-            <ProtectedRoute>
-              <ProvidersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chat/:conversationId"
-          element={
-            <ProtectedRoute>
-              <ChatPage />
-            </ProtectedRoute>
-          }
-        />
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/agents/manage" element={<AgentsPage />} />
+          <Route path="/knowledge-bases" element={<KnowledgeBasePage />} />
+          <Route path="/exemplar-sets" element={<ExemplarSetPage />} />
+          <Route path="/search-providers" element={<SearchProvidersPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/chat/:conversationId" element={<ChatPage />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

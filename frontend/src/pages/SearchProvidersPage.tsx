@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
 interface SP { id: string; name: string; display_name: string; api_base: string | null; has_api_key: boolean; custom_params: Record<string, string>; is_enabled: boolean; is_default: boolean; }
@@ -18,8 +17,6 @@ export default function SearchProvidersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", display_name: "", api_key: "", api_base: "", cx: "", mode: "search" });
   const [testResult, setTestResult] = useState("");
-  const navigate = useNavigate();
-
   const load = () => { api.get<SP[]>("/search-providers").then(setProviders).catch(() => {}); };
   useEffect(() => { load(); }, []);
 
@@ -68,8 +65,7 @@ export default function SearchProvidersPage() {
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <button onClick={() => navigate("/")} className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors">&larr; Dashboard</button>
-          <h1 className="text-2xl font-bold mt-1">Search Providers</h1>
+          <h1 className="text-2xl font-bold">Search Providers</h1>
           <p className="text-sm text-matrix-text-dim mt-1">Configure web search for agents. Assign providers to agents to enable tool-use search.</p>
         </div>
         <div className="flex gap-2">

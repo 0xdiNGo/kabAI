@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import AppRoutes from "@/routes";
+import CommandPalette from "@/components/CommandPalette";
 import ToastContainer from "@/components/Toast";
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
   return (
     <>
       <AppRoutes />
+      <CommandPalette />
       <ToastContainer />
     </>
   );

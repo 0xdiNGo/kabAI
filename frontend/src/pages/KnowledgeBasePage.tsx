@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
 interface KB {
@@ -81,8 +80,6 @@ export default function KnowledgeBasePage() {
   }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const navigate = useNavigate();
-
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
@@ -376,8 +373,7 @@ export default function KnowledgeBasePage() {
     <div className="mx-auto max-w-6xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <button onClick={() => navigate("/")} className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors">&larr; Dashboard</button>
-          <h1 className="text-2xl font-bold mt-1">Knowledge Bases</h1>
+          <h1 className="text-2xl font-bold">Knowledge Bases</h1>
         </div>
         <button onClick={() => setShowCreate(true)} className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">
           Create KB

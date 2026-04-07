@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { ModelInfo, Provider } from "@/types/provider";
 
@@ -74,8 +73,6 @@ export default function ProvidersPage() {
   const [testResults, setTestResults] = useState<Record<string, { status: string; detail?: string }>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const navigate = useNavigate();
-
   const loadProviders = () => {
     api.get<Provider[]>("/providers").then(setProviders).catch(() => {});
   };
@@ -220,13 +217,7 @@ export default function ProvidersPage() {
     <div className="mx-auto max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <button
-            onClick={() => navigate("/")}
-            className="text-sm text-matrix-text-dim hover:text-matrix-text-bright transition-colors"
-          >
-            &larr; Back to Dashboard
-          </button>
-          <h1 className="text-2xl font-bold mt-1">LLM Providers</h1>
+          <h1 className="text-2xl font-bold">Settings</h1>
         </div>
         {!showForm && (
           <button
