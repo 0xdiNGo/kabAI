@@ -3,7 +3,7 @@
  * Syntax highlighting, line numbers, gruvbox theme.
  */
 
-import { useRef } from "react";
+import { memo, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 
 // Language map: markdown fence tags → Monaco language IDs
@@ -30,7 +30,7 @@ interface Props {
   onExport?: (content: string, format: string) => void;
 }
 
-export default function CodeEditor({ text, language, onExport }: Props) {
+const CodeEditor = memo(function CodeEditor({ text, language, onExport }: Props) {
   const editorRef = useRef<ReturnType<OnMount> extends void ? never : Parameters<OnMount>[0]>(null);
   const lines = text.split("\n").length;
   const height = Math.min(Math.max(lines * 19 + 16, 60), 500);
@@ -115,6 +115,7 @@ export default function CodeEditor({ text, language, onExport }: Props) {
             horizontal: "auto",
             verticalScrollbarSize: 6,
             horizontalScrollbarSize: 6,
+            handleMouseWheel: false,
           },
           padding: { top: 8, bottom: 8 },
           domReadOnly: true,
@@ -123,4 +124,6 @@ export default function CodeEditor({ text, language, onExport }: Props) {
       />
     </div>
   );
-}
+});
+
+export default CodeEditor;

@@ -3,7 +3,7 @@
  * Canvas-based, handles all escape sequences natively.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -120,7 +120,7 @@ interface Props {
   text: string;
 }
 
-export default function TerminalBlock({ text }: Props) {
+const TerminalBlock = memo(function TerminalBlock({ text }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -143,6 +143,7 @@ export default function TerminalBlock({ text }: Props) {
       disableStdin: true,
       scrollback: 0,
       convertEol: true,
+      overviewRulerWidth: 0,
     });
 
     const fitAddon = new FitAddon();
@@ -159,6 +160,14 @@ export default function TerminalBlock({ text }: Props) {
     }
 
     termRef.current = term;
+
+    // Disable xterm scroll wheel capture — let page scroll through
+    // xterm's viewport listens for wheel events; we override by making
+    // the viewport non-interactive
+    const viewport = containerRef.current?.querySelector(".xterm-viewport");
+    if (viewport) {
+      (viewport as HTMLElement).style.pointerEvents = "none";
+    }
 
     return () => {
       term.dispose();
@@ -198,6 +207,7 @@ export default function TerminalBlock({ text }: Props) {
       )}
     </div>
   );
-}
+});
 
+export default TerminalBlock;
 export { hasMircCodes };
