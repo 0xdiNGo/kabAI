@@ -363,7 +363,10 @@ class LLMService:
                 "bold, and tables where appropriate. IMPORTANT: Always wrap code, "
                 "configuration, terminal output, ASCII art, and any monospaced content "
                 "in fenced code blocks (```language). Never use inline backticks for "
-                "multi-line code — always use a single fenced block."
+                "multi-line code — always use a single fenced block. "
+                "For ASCII art, use extended Unicode block characters (█▓▒░▄▀│─┌┐└┘├┤┬┴┼) "
+                "in a plain code block. For colored IRC/terminal art, use mIRC color codes: "
+                "\\x03FG,BG for colors (0-15), \\x0F to reset, \\x02 for bold."
             )
             if context:
                 prompt += (

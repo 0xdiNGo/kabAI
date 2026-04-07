@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import Ansi from "ansi-to-react";
+import MircRenderer, { hasMircCodes } from "@/components/MircRenderer";
 
 // Override oneDark background to match gruvbox
 const codeTheme = {
@@ -23,12 +24,14 @@ const ANSI_REGEX = /\x1b\[[\d;]*m/;
 
 function CodeBlock({ text, language }: { text: string; language: string | null }) {
   const hasAnsi = ANSI_REGEX.test(text);
+  const hasMirc = hasMircCodes(text);
+  const hasColors = hasAnsi || hasMirc;
   const [showRaw, setShowRaw] = useState(false);
 
   return (
     <div className="relative group/code my-2">
       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/code:opacity-100 transition-opacity z-10">
-        {hasAnsi && (
+        {hasColors && (
           <button
             onClick={() => setShowRaw(!showRaw)}
             className="rounded bg-matrix-bg/70 px-1.5 py-0.5 text-[10px] text-matrix-text-faint hover:text-matrix-text-bright"
@@ -43,7 +46,9 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
           Copy
         </button>
       </div>
-      {hasAnsi && !showRaw ? (
+      {hasMirc && !showRaw ? (
+        <MircRenderer text={text} />
+      ) : hasAnsi && !showRaw ? (
         <div
           className="overflow-x-auto rounded-lg font-mono text-[0.8rem] leading-relaxed whitespace-pre"
           style={{ background: "#1d2021", padding: "1rem" }}
