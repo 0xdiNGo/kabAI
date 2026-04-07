@@ -135,8 +135,9 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
-        # Build message history
-        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+        # Build message history — last 30 messages for LLM context window
+        recent = convo.messages[-30:] if len(convo.messages) > 30 else convo.messages
+        messages = [{"role": m.role, "content": m.content} for m in recent]
 
         # Retrieve knowledge base context and exemplars in parallel
         # Pass conversation history so follow-up questions resolve correctly
@@ -191,8 +192,9 @@ class ConversationService:
             agent.fallback_models if agent else None,
         )
 
-        # Build message history
-        messages = [{"role": m.role, "content": m.content} for m in convo.messages]
+        # Build message history — last 30 messages for LLM context window
+        recent = convo.messages[-30:] if len(convo.messages) > 30 else convo.messages
+        messages = [{"role": m.role, "content": m.content} for m in recent]
 
         # Retrieve knowledge base context and exemplars in parallel
         # Pass conversation history so follow-up questions resolve correctly

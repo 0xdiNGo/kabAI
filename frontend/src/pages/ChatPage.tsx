@@ -406,15 +406,21 @@ export default function ChatPage() {
     };
   }, [conversationId]);
 
+  // Throttle scroll-to-bottom during streaming (every 200ms, not every token)
+  const lastScrollRef = useRef(0);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const now = Date.now();
+    if (now - lastScrollRef.current > 200) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      lastScrollRef.current = now;
+    }
   }, [messages, streamContent]);
 
-  const getAgentColor = (agentId: string | null) => {
+  const getAgentColor = useCallback((agentId: string | null) => {
     if (!agentId) return AGENT_COLORS[0];
     const idx = agentIds.indexOf(agentId);
     return AGENT_COLORS[idx >= 0 ? idx % AGENT_COLORS.length : 0];
-  };
+  }, [agentIds]);
 
   const handleStreamEvent = useCallback((data: string) => {
     try {

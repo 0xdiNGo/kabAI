@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
@@ -37,6 +37,7 @@ export default function DashboardPage() {
   const [kabAInetMode, setKabAInetMode] = useState(false);
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const navigate = useNavigate();
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const user = useAuthStore((s) => s.user);
 
   const loadConversations = () => {
@@ -222,7 +223,13 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <input
             value={agentSearch}
-            onChange={(e) => { setAgentSearch(e.target.value); setAgentPage(0); loadAgents(undefined, e.target.value, undefined, 0); }}
+            onChange={(e) => {
+              const val = e.target.value;
+              setAgentSearch(val);
+              setAgentPage(0);
+              if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+              searchTimerRef.current = setTimeout(() => loadAgents(undefined, val, undefined, 0), 300);
+            }}
             placeholder="Search agents..."
             className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text-bright placeholder-matrix-text-faint outline-none w-48"
           />

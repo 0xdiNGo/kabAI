@@ -31,6 +31,14 @@ async def list_conversations(
     svc: ConversationService = Depends(get_conversation_service),
 ):
     convos = await svc.list_conversations(user.id, limit, offset)
+
+    # Batch-load agent names for conversations missing last_agent_name
+    agent_ids_needed = {c.agent_id for c in convos if c.agent_id and not c.last_agent_name}
+    agent_names: dict[str, str] = {}
+    if agent_ids_needed:
+        agents = await svc.agent_repo.find_by_ids(list(agent_ids_needed))
+        agent_names = {a.id: a.name for a in agents}
+
     results = []
     for c in convos:
         # Generate a quick summary from the first user message if none stored
@@ -42,12 +50,7 @@ async def list_conversations(
                 if len(first_user.content) > 120:
                     summary += "..."
 
-        # Derive agent name if not stored
-        agent_name = c.last_agent_name
-        if not agent_name and c.agent_id:
-            agent = await svc.agent_repo.find_by_id(c.agent_id)
-            if agent:
-                agent_name = agent.name
+        agent_name = c.last_agent_name or agent_names.get(c.agent_id or "", None)
 
         results.append(ConversationResponse(
             id=c.id,

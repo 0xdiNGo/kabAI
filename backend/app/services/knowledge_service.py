@@ -25,6 +25,23 @@ DEFAULT_CHUNK_SIZE = "medium"
 CONCURRENT_TITLES = 5  # Max concurrent LLM calls for title generation
 DEEP_MAX_LINKS = 10
 
+# Stop words for key term extraction — module-level constant to avoid rebuilding per query
+_STOP_WORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+    "on", "with", "at", "by", "from", "as", "into", "about", "like",
+    "through", "after", "over", "between", "out", "against", "during",
+    "without", "before", "under", "around", "among", "it", "its",
+    "this", "that", "these", "those", "i", "me", "my", "we", "our",
+    "you", "your", "he", "she", "they", "them", "their", "what",
+    "which", "who", "whom", "how", "when", "where", "why",
+    "not", "no", "nor", "but", "or", "and", "if", "then", "so",
+    "just", "also", "very", "really", "please", "tell", "know",
+    "think", "get", "make", "go", "see", "look", "find", "give",
+    "more", "some", "any", "all", "each", "every", "both",
+})
+
 
 class IngestLimits:
     """Tracks usage against limits during an ingest operation."""
@@ -790,21 +807,6 @@ class KnowledgeService:
         This gives MongoDB text search a better chance of matching when
         the original query is conversational ("can you tell me about...").
         """
-        stop_words = {
-            "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-            "have", "has", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "can", "shall", "to", "of", "in", "for",
-            "on", "with", "at", "by", "from", "as", "into", "about", "like",
-            "through", "after", "over", "between", "out", "against", "during",
-            "without", "before", "under", "around", "among", "it", "its",
-            "this", "that", "these", "those", "i", "me", "my", "we", "our",
-            "you", "your", "he", "she", "they", "them", "their", "what",
-            "which", "who", "whom", "how", "when", "where", "why",
-            "not", "no", "nor", "but", "or", "and", "if", "then", "so",
-            "just", "also", "very", "really", "please", "tell", "know",
-            "think", "get", "make", "go", "see", "look", "find", "give",
-            "more", "some", "any", "all", "each", "every", "both",
-        }
         words = re.findall(r'\b\w+\b', query.lower())
-        key = [w for w in words if w not in stop_words and len(w) > 2]
+        key = [w for w in words if w not in _STOP_WORDS and len(w) > 2]
         return " ".join(key) if key else ""

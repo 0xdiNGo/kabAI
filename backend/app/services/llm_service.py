@@ -96,8 +96,19 @@ class LLMService:
         )
 
     async def _get_model_kwargs(self, model: str) -> dict:
-        """Get litellm kwargs (api_key, api_base) for the given model."""
+        """Get litellm kwargs (api_key, api_base) for the given model. Cached 60s."""
         provider_prefix = model.split("/")[0] if "/" in model else model
+
+        # Check cache
+        now = time.monotonic()
+        cache_key = provider_prefix
+        if hasattr(self, "_kwargs_cache"):
+            cached = self._kwargs_cache.get(cache_key)
+            if cached and (now - cached[1]) < 60:
+                return cached[0]
+        else:
+            self._kwargs_cache: dict = {}
+
         providers = await self.provider_service.list_providers()
         kwargs: dict = {}
         for p in providers:
@@ -107,6 +118,8 @@ class LLMService:
                 if p.api_base:
                     kwargs["api_base"] = p.api_base
                 break
+
+        self._kwargs_cache[cache_key] = (kwargs, now)
         return kwargs
 
     async def complete(
