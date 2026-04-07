@@ -204,8 +204,8 @@ export default function ChatPage() {
   const [chatKBs, setChatKBs] = useState<{ id: string; name: string }[]>([]);
   const [chatES, setChatES] = useState<{ id: string; name: string }[]>([]);
   const [chatSP, setChatSP] = useState<{ id: string; display_name: string }[]>([]);
-  const [isKabbalah, setIsKabbalah] = useState(false);
-  const isKabbalahRef = useRef(false);
+  const [isKabAInet, setIsKabAInet] = useState(false);
+  const isKabAInetRef = useRef(false);
   const [agentIds, setAgentIds] = useState<string[]>([]);
   const [currentAgent, _setCurrentAgent] = useState<{ id: string; name: string } | null>(null);
   const currentAgentRef = useRef<{ id: string; name: string } | null>(null);
@@ -226,9 +226,9 @@ export default function ChatPage() {
         const convo = await api.get<ConversationDetail>(`/conversations/${conversationId}`);
         setMessages(convo.messages);
         setTitle(convo.title);
-        const rt = convo.collaboration_mode === "kabbalah";
-        setIsKabbalah(rt);
-        isKabbalahRef.current = rt;
+        const rt = convo.collaboration_mode === "kabainet";
+        setIsKabAInet(rt);
+        isKabAInetRef.current = rt;
         setAgentIds(convo.agent_ids ?? []);
 
         // Load agent detail if single-agent chat
@@ -382,7 +382,7 @@ export default function ChatPage() {
         ]);
         setStreamContent("");
         setIsThinking(false);
-        if (!isKabbalahRef.current) {
+        if (!isKabAInetRef.current) {
           setIsStreaming(false);
           updateCurrentAgent(null);
         }
@@ -407,7 +407,7 @@ export default function ChatPage() {
         setStreamContent("");
         setIsThinking(false);
       } else if (event.type === "agent_error") {
-        // Agent failed in kabbalah — show error message, continue to next agent
+        // Agent failed in kabAInet — show error message, continue to next agent
         setMessages((prev) => [
           ...prev,
           {
@@ -564,9 +564,9 @@ export default function ChatPage() {
           <h1 className="font-semibold">{title ?? "Chat"}</h1>
         </div>
         <div className="flex items-center gap-2">
-          {isKabbalah && (
+          {isKabAInet && (
             <span className="rounded-full bg-matrix-purple-dim/30 px-3 py-1 text-xs text-matrix-purple">
-              Kabbalah
+              kabAInet
             </span>
           )}
           {agentDetail && (
@@ -662,7 +662,7 @@ export default function ChatPage() {
         {isStreaming && isThinking && (
           <div className="flex justify-start">
             <div className="max-w-[70%]">
-              {isKabbalah && currentAgent && (
+              {isKabAInet && currentAgent && (
                 <p
                   className="text-xs font-medium mb-1 ml-1"
                   style={{ color: getAgentColor(currentAgent.id) }}
@@ -672,10 +672,10 @@ export default function ChatPage() {
               )}
               <div
                 className={`rounded-xl bg-matrix-input px-4 py-3${
-                  isKabbalah && currentAgent ? " border-l-2" : ""
+                  isKabAInet && currentAgent ? " border-l-2" : ""
                 }`}
                 style={
-                  isKabbalah && currentAgent
+                  isKabAInet && currentAgent
                     ? { borderLeftColor: getAgentColor(currentAgent.id) }
                     : undefined
                 }
@@ -697,7 +697,7 @@ export default function ChatPage() {
         {isStreaming && streamContent && (
           <div className="flex justify-start">
             <div className="max-w-[70%]">
-              {isKabbalah && currentAgent && (
+              {isKabAInet && currentAgent && (
                 <p
                   className="text-xs font-medium mb-1 ml-1"
                   style={{ color: getAgentColor(currentAgent.id) }}
@@ -707,10 +707,10 @@ export default function ChatPage() {
               )}
               <div
                 className={`rounded-xl bg-matrix-input px-4 py-3${
-                  isKabbalah && currentAgent ? " border-l-2" : ""
+                  isKabAInet && currentAgent ? " border-l-2" : ""
                 }`}
                 style={
-                  isKabbalah && currentAgent
+                  isKabAInet && currentAgent
                     ? { borderLeftColor: getAgentColor(currentAgent.id) }
                     : undefined
                 }
@@ -827,7 +827,7 @@ export default function ChatPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-matrix-text-faint mb-0.5">Collaboration Role<HelpTip text="How this agent behaves in kabbalah discussions. Specialist contributes expertise, Critic finds flaws, Synthesizer combines viewpoints." /></label>
+                <label className="block text-xs text-matrix-text-faint mb-0.5">Collaboration Role<HelpTip text="How this agent behaves in kabAInet discussions. Specialist contributes expertise, Critic finds flaws, Synthesizer combines viewpoints." /></label>
                 <select value={agentForm.collaboration_role}
                   onChange={(e) => setAgentForm({ ...agentForm, collaboration_role: e.target.value })}
                   className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
@@ -903,7 +903,7 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isKabbalah ? "Send a message to all agents..." : "Type a message..."}
+            placeholder={isKabAInet ? "Send a message to all agents..." : "Type a message..."}
             rows={1}
             className="flex-1 resize-none rounded-xl bg-matrix-input px-4 py-3 text-matrix-text-bright placeholder-matrix-text-faint outline-none focus:ring-2 focus:ring-matrix-accent"
           />
@@ -918,7 +918,7 @@ export default function ChatPage() {
           </label>
           <button
             onClick={sendMessage}
-            disabled={!input.trim() || (isStreaming && !isKabbalah)}
+            disabled={!input.trim() || (isStreaming && !isKabAInet)}
             className="rounded-xl bg-matrix-accent px-6 py-3 font-medium hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Send

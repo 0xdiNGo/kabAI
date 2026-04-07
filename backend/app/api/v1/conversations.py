@@ -6,7 +6,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.dependencies import (
     get_conversation_service,
     get_current_user,
-    get_kabbalah_service,
+    get_kabainet_service,
     get_settings_repo,
 )
 from app.repositories.settings_repo import SettingsRepository
@@ -18,7 +18,7 @@ from app.schemas.conversation import (
     MessageSend,
 )
 from app.services.conversation_service import ConversationService
-from app.services.orchestration.kabbalah_service import KabbalahService
+from app.services.orchestration.kabainet_service import KabAInetService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -159,7 +159,7 @@ async def send_message_stream(
     request: Request,
     user=Depends(get_current_user),
     svc: ConversationService = Depends(get_conversation_service),
-    kabbalah_svc: KabbalahService = Depends(get_kabbalah_service),
+    kabainet_svc: KabAInetService = Depends(get_kabainet_service),
     settings_repo: SettingsRepository = Depends(get_settings_repo),
 ):
     bg = request.app.state.background_manager
@@ -174,8 +174,8 @@ async def send_message_stream(
         # Create queue first, then build coroutine with it
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-        if convo.collaboration_mode == "kabbalah":
-            coro = kabbalah_svc.run_message_stream(
+        if convo.collaboration_mode == "kabainet":
+            coro = kabainet_svc.run_message_stream(
                 conversation_id, user.id, body.content, queue
             )
         else:

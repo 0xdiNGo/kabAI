@@ -628,7 +628,7 @@ List the current user's conversations.
 
 ### POST /conversations
 
-Create a new conversation. Three modes are supported: single-agent chat, direct model chat, or kabbalah collaboration.
+Create a new conversation. Three modes are supported: single-agent chat, direct model chat, or kabAInet collaboration.
 
 **Auth required:** Yes
 
@@ -648,11 +648,11 @@ Create a new conversation. Three modes are supported: single-agent chat, direct 
 }
 ```
 
-**Request (kabbalah collaboration):**
+**Request (kabAInet collaboration):**
 ```json
 {
   "agent_ids": ["507f1f77bcf86cd799439012", "507f1f77bcf86cd799439013", "507f1f77bcf86cd799439014"],
-  "collaboration_mode": "kabbalah",
+  "collaboration_mode": "kabainet",
   "title": "Security architecture review"
 }
 ```
@@ -660,9 +660,9 @@ Create a new conversation. Three modes are supported: single-agent chat, direct 
 | Field                | Type     | Required | Notes                                        |
 |----------------------|----------|----------|----------------------------------------------|
 | `agent_id`           | string   | no       | Use agent's model and system prompt          |
-| `agent_ids`          | string[] | no       | List of agent IDs for kabbalah mode        |
-| `collaboration_mode` | string   | no       | Set to `"kabbalah"` for multi-agent chat   |
-| `model`              | string   | no       | Required if `agent_id` is null and not kabbalah |
+| `agent_ids`          | string[] | no       | List of agent IDs for kabAInet mode        |
+| `collaboration_mode` | string   | no       | Set to `"kabainet"` for multi-agent chat   |
+| `model`              | string   | no       | Required if `agent_id` is null and not kabAInet |
 | `title`              | string   | no       | Auto-generated if omitted                    |
 
 **Response (201):**
@@ -813,7 +813,7 @@ Get system settings.
   "default_model": "ollama/llama3",
   "default_ingest_model": "openai/gpt-4o-mini",
   "max_background_chats": 5,
-  "kabbalah_max_rounds": 3,
+  "kabainet_max_rounds": 3,
   "ingest_max_items": 500,
   "ingest_max_urls": 20,
   "huggingface_enabled": true,
@@ -827,7 +827,7 @@ Get system settings.
 | `default_model`        | string/null  | Default LLM for chat when no agent model is set    |
 | `default_ingest_model` | string/null  | Default LLM for knowledge base ingestion tasks     |
 | `max_background_chats` | int          | Max concurrent background streaming chats          |
-| `kabbalah_max_rounds`| int          | Max discussion rounds in kabbalah mode           |
+| `kabainet_max_rounds`| int          | Max discussion rounds in kabAInet mode           |
 | `ingest_max_items`     | int          | Max items per knowledge base ingest operation      |
 | `ingest_max_urls`      | int          | Max URLs to crawl in a deep ingest-url operation   |
 | `huggingface_enabled`  | bool         | Whether HuggingFace integration is active          |
@@ -848,7 +848,7 @@ Update system settings.
   "default_model": "ollama/llama3",
   "default_ingest_model": "openai/gpt-4o-mini",
   "max_background_chats": 10,
-  "kabbalah_max_rounds": 5,
+  "kabainet_max_rounds": 5,
   "ingest_max_items": 1000,
   "ingest_max_urls": 50,
   "huggingface_enabled": true,
@@ -862,7 +862,7 @@ Update system settings.
 | `default_model`        | string/null | no       | Set to `null` to clear                          |
 | `default_ingest_model` | string/null | no       | Set to `null` to clear                          |
 | `max_background_chats` | int         | no       |                                                 |
-| `kabbalah_max_rounds`| int         | no       |                                                 |
+| `kabainet_max_rounds`| int         | no       |                                                 |
 | `ingest_max_items`     | int         | no       |                                                 |
 | `ingest_max_urls`      | int         | no       |                                                 |
 | `huggingface_enabled`  | bool        | no       | Enable/disable HuggingFace integration          |
@@ -1629,7 +1629,7 @@ Streaming endpoints return JSON events in SSE `data:` lines. Each event has a `t
 | `error` | `{type, detail}` | Fatal error |
 | `keepalive` | `{type}` | Sent every 30s to keep connection alive |
 
-### Kabbalah Chat
+### kabAInet Chat
 
 All single-agent events plus:
 
@@ -1643,7 +1643,7 @@ All single-agent events plus:
 | `consensus` | `{type, round, passes, total}` | Majority of agents passed — discussion ends |
 | `round_done` | `{type}` | All rounds complete |
 
-### Example Kabbalah Flow
+### Example kabAInet Flow
 
 ```
 data: {"type":"round_start","round":1,"max_rounds":3}
@@ -1699,7 +1699,7 @@ Model IDs throughout the API use the `provider/model_name` format, which maps di
 
 ## Collaboration Roles
 
-Agents can have a `collaboration_role` that shapes their behavior in kabbalah discussions:
+Agents can have a `collaboration_role` that shapes their behavior in kabAInet discussions:
 
 | Role | Behavior |
 |------|----------|

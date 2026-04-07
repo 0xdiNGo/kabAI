@@ -357,9 +357,9 @@ make seed        # Re-seed demo data
 
 ---
 
-## Kabbalah Discussions
+## kabAInet Discussions
 
-### Start a kabbalah via API
+### Start a kabAInet via API
 
 ```bash
 # Get agent IDs
@@ -370,26 +370,26 @@ for a in json.load(sys.stdin):
     print(f'{a[\"id\"]}  {a[\"name\"]}')
 "
 
-# Create a kabbalah conversation
+# Create a kabAInet conversation
 curl -s http://localhost:3000/api/v1/conversations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
     "agent_ids": ["AGENT_ID_1", "AGENT_ID_2", "AGENT_ID_3"],
-    "collaboration_mode": "kabbalah",
+    "collaboration_mode": "kabainet",
     "title": "Architecture Review"
   }'
 ```
 
-Or use the UI: Dashboard → toggle **Kabbalah** → select 2+ agents → **Start Kabbalah**. The Dashboard also provides a **Knowledge Bases** page (accessible from the sidebar) for managing knowledge bases, ingesting content, and assigning KBs to agents through the UI.
+Or use the UI: Dashboard → toggle **kabAInet** → select 2+ agents → **Start kabAInet**. The Dashboard also provides a **Knowledge Bases** page (accessible from the sidebar) for managing knowledge bases, ingesting content, and assigning KBs to agents through the UI.
 
-### Configure kabbalah rounds
+### Configure kabAInet rounds
 
 ```bash
 curl -s -X PUT http://localhost:3000/api/v1/settings \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"kabbalah_max_rounds": 5}'
+  -d '{"kabainet_max_rounds": 5}'
 ```
 
 Default is 3 rounds. Agents pass when they have nothing to add — majority passing ends discussion early.

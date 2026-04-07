@@ -18,7 +18,7 @@ class SettingsResponse(BaseModel):
     default_model: str | None
     default_ingest_model: str | None
     max_background_chats: int
-    kabbalah_max_rounds: int
+    kabainet_max_rounds: int
     ingest_max_items: int
     ingest_max_urls: int
     huggingface_enabled: bool
@@ -32,7 +32,7 @@ class SettingsUpdate(BaseModel):
     default_model: str | None = None
     default_ingest_model: str | None = None
     max_background_chats: int | None = None
-    kabbalah_max_rounds: int | None = None
+    kabainet_max_rounds: int | None = None
     ingest_max_items: int | None = None
     ingest_max_urls: int | None = None
     huggingface_enabled: bool | None = None
@@ -52,7 +52,7 @@ async def get_settings(
         default_model=settings.default_model,
         default_ingest_model=settings.default_ingest_model,
         max_background_chats=settings.max_background_chats,
-        kabbalah_max_rounds=settings.kabbalah_max_rounds,
+        kabainet_max_rounds=settings.kabainet_max_rounds,
         ingest_max_items=settings.ingest_max_items,
         ingest_max_urls=settings.ingest_max_urls,
         huggingface_enabled=settings.huggingface_enabled,

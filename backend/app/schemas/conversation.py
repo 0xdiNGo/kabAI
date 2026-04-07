@@ -5,9 +5,9 @@ from pydantic import BaseModel
 
 class ConversationCreate(BaseModel):
     agent_id: str | None = None
-    agent_ids: list[str] | None = None  # for kabbalah
-    collaboration_mode: str | None = None  # "kabbalah"
-    model: str | None = None  # required if agent_id is None and not kabbalah
+    agent_ids: list[str] | None = None  # for kabainet
+    collaboration_mode: str | None = None  # "kabainet"
+    model: str | None = None  # required if agent_id is None and not kabainet
     title: str | None = None
 
 

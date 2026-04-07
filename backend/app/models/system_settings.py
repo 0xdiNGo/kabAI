@@ -8,7 +8,7 @@ class SystemSettings(BaseModel):
     default_model: str | None = None
     default_ingest_model: str | None = None
     max_background_chats: int = 5
-    kabbalah_max_rounds: int = 3
+    kabainet_max_rounds: int = 3
     ingest_max_items: int = 200
     ingest_max_urls: int = 10
     huggingface_enabled: bool = False

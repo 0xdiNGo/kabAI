@@ -11,7 +11,7 @@ from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
 
 
-class KabbalahService:
+class KabAInetService:
     def __init__(
         self,
         conversation_repo: ConversationRepository,
@@ -35,13 +35,13 @@ class KabbalahService:
         content: str,
         queue: asyncio.Queue[str | None],
     ) -> None:
-        """Run a multi-round kabbalah discussion, pushing events to queue."""
+        """Run a multi-round kabAInet discussion, pushing events to queue."""
         convo = await self.conversation_repo.find_by_id(conversation_id)
         if not convo or convo.user_id != user_id:
             raise NotFoundError("Conversation", conversation_id)
 
         settings = await self.settings_repo.get()
-        max_rounds = settings.kabbalah_max_rounds
+        max_rounds = settings.kabainet_max_rounds
 
         # Save user message
         user_msg = Message(role="user", content=content)
@@ -50,7 +50,7 @@ class KabbalahService:
         # Load participating agents in order
         agents = await self.agent_repo.find_by_ids(convo.agent_ids)
         if not agents:
-            raise NotFoundError("Agents", "no agents found for kabbalah")
+            raise NotFoundError("Agents", "no agents found for kabAInet")
 
         # Build message history (existing + new user message)
         thread = [{"role": m.role, "content": m.content} for m in convo.messages]
@@ -232,7 +232,7 @@ class KabbalahService:
         role: str | None = None,
     ) -> str:
         base = (
-            f"You are in a kabbalah discussion with: {', '.join(other_names)}. "
+            f"You are in a kabAInet discussion with: {', '.join(other_names)}. "
             f"This is round {round_num} of {max_rounds}. "
             f"You can see the full conversation including other agents' responses. "
         )

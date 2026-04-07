@@ -21,7 +21,7 @@ from app.services.vector_service import VectorService
 from app.services.search_service import SearchService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
-from app.services.orchestration.kabbalah_service import KabbalahService
+from app.services.orchestration.kabainet_service import KabAInetService
 from app.services.provider_service import ProviderService
 
 
@@ -153,7 +153,7 @@ def get_conversation_service(
     return ConversationService(conversation_repo, agent_repo, llm_service, knowledge_service, exemplar_service, search_service)
 
 
-def get_kabbalah_service(
+def get_kabainet_service(
     conversation_repo: ConversationRepository = Depends(get_conversation_repo),
     agent_repo: AgentRepository = Depends(get_agent_repo),
     llm_service: LLMService = Depends(get_llm_service),
@@ -161,7 +161,7 @@ def get_kabbalah_service(
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
     exemplar_service: ExemplarService = Depends(get_exemplar_service),
 ):
-    return KabbalahService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service, exemplar_service)
+    return KabAInetService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service, exemplar_service)
 
 
 # Auth dependencies
