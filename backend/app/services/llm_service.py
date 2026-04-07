@@ -7,6 +7,7 @@ import litellm
 from app.core.exceptions import NotFoundError
 from app.models.agent import Agent
 from app.repositories.settings_repo import SettingsRepository
+from app.services.irc_art_spec import IRC_ART_SPEC
 from app.services.provider_service import ProviderService
 
 SEARCH_TOOL_DEFINITION = {
@@ -363,17 +364,9 @@ class LLMService:
                 "bold, and tables where appropriate. IMPORTANT: Always wrap code, "
                 "configuration, terminal output, ASCII art, and any monospaced content "
                 "in fenced code blocks (```language). Never use inline backticks for "
-                "multi-line code — always use a single fenced block. "
-                "ASCII ART RULES (strict): "
-                "1) EVERY line must be EXACTLY 80 visible characters — count them. "
-                "2) Pad short lines with spaces to 80. No exceptions. "
-                "3) Safe characters: █ # @ - _ / \\ | space and ASCII 0-127. "
-                "4) For shading gradients: █▓▒░ are OK but ONLY in code blocks. "
-                "5) NO emoji, NO East Asian characters, NO double-width Unicode. "
-                "mIRC COLOR CODES: \\x03FG,BG sets color (FG/BG = 0-15), "
-                "\\x0F resets. Color codes do NOT count toward the 80-char width. "
-                "Example: \\x0304,01██████\\x0F = 6 visible chars (red on black). "
-                "Layer colors line-by-line for gradation effects."
+                "multi-line code — always use a single fenced block.\n\n"
+                "You can generate IRC-compatible ASCII art when asked. "
+                "Use the mIRC color code format below:\n" + IRC_ART_SPEC
             )
             if context:
                 prompt += (
