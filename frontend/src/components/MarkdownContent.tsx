@@ -68,7 +68,7 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
           style={{
             background: "#1d2021",
             padding: "1rem",
-            fontFamily: "'Courier New', Courier, monospace",
+            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', monospace",
             lineHeight: "1.2",
           }}
         >
@@ -85,7 +85,7 @@ function CodeBlock({ text, language }: { text: string; language: string | null }
             fontSize: "0.8rem",
             background: "#1d2021",
             padding: "1rem",
-            fontFamily: "'Courier New', Courier, monospace",
+            fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', monospace",
             lineHeight: "1.2",
           }}
           codeTagProps={{ style: { background: "transparent" } }}

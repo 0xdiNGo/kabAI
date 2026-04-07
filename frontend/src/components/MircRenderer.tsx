@@ -30,7 +30,7 @@ const MIRC_COLORS: Record<number, string> = {
 const MONO_STYLE: React.CSSProperties = {
   background: "#1d2021",
   padding: "1rem",
-  fontFamily: "'Courier New', Courier, monospace",
+  fontFamily: "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', monospace",
   fontSize: "0.8rem",
   lineHeight: "1.25",
 };
@@ -127,7 +127,6 @@ export function hasMircCodes(text: string): boolean {
 
 // --- Rendered View ---
 
-/** Render a span — only replace pure █ runs with CSS cells, everything else is text */
 function renderSpan(span: Span, key: number) {
   const fgc = span.reverse
     ? (span.bg !== undefined ? MIRC_COLORS[span.bg] : "#1d2021")
@@ -136,43 +135,14 @@ function renderSpan(span: Span, key: number) {
     ? (span.fg !== undefined ? MIRC_COLORS[span.fg] : undefined)
     : (span.bg !== undefined ? MIRC_COLORS[span.bg] : undefined);
 
-  const baseStyle: React.CSSProperties = {
-    color: fgc,
-    backgroundColor: bgc,
-    fontWeight: span.bold ? "bold" : undefined,
-    textDecoration: span.underline ? "underline" : undefined,
-    fontStyle: span.italic ? "italic" : undefined,
-  };
-
-  // Only replace pure █ runs — leave ░▒▓ and everything else as text
-  if (!span.text.includes("█")) {
-    return <span key={key} style={baseStyle}>{span.text}</span>;
-  }
-
-  // Split on █ runs and render those as CSS cells
-  const parts = span.text.split(/(█+)/);
   return (
-    <span key={key}>
-      {parts.map((part, pi) => {
-        if (/^█+$/.test(part)) {
-          const color = fgc || bgc || "#ffffff";
-          return (
-            <span
-              key={pi}
-              style={{
-                display: "inline-block",
-                width: `${part.length}ch`,
-                height: "1.25em",
-                backgroundColor: color,
-                verticalAlign: "top",
-              }}
-            />
-          );
-        }
-        if (!part) return null;
-        return <span key={pi} style={baseStyle}>{part}</span>;
-      })}
-    </span>
+    <span key={key} style={{
+      color: fgc,
+      backgroundColor: bgc,
+      fontWeight: span.bold ? "bold" : undefined,
+      textDecoration: span.underline ? "underline" : undefined,
+      fontStyle: span.italic ? "italic" : undefined,
+    }}>{span.text}</span>
   );
 }
 
