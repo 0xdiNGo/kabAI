@@ -235,14 +235,14 @@ function ThinkingQuips() {
         setFading(false);
         if (charRef.current >= phrase.length) {
           phaseRef.current = "hold";
-          timerRef.current = setTimeout(tick, 600);
+          timerRef.current = setTimeout(tick, 2000);
         } else {
-          timerRef.current = setTimeout(tick, 12);
+          timerRef.current = setTimeout(tick, 25);
         }
       } else if (phaseRef.current === "hold") {
         phaseRef.current = "fade";
         setFading(true);
-        timerRef.current = setTimeout(tick, 350);
+        timerRef.current = setTimeout(tick, 800);
       } else {
         // fade done — advance
         indexRef.current++;
@@ -250,7 +250,7 @@ function ThinkingQuips() {
         phaseRef.current = "type";
         setText("");
         setFading(false);
-        timerRef.current = setTimeout(tick, 50);
+        timerRef.current = setTimeout(tick, 200);
       }
     };
 
@@ -260,7 +260,7 @@ function ThinkingQuips() {
 
   return (
     <span
-      className="text-sm text-matrix-text-dim inline-block transition-opacity duration-300"
+      className="text-sm text-matrix-text-dim inline-block transition-opacity duration-700"
       style={{ opacity: fading ? 0 : 1, minWidth: "16rem" }}
     >
       {text}
