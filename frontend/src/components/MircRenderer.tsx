@@ -125,24 +125,41 @@ export function hasMircCodes(text: string): boolean {
 
 function RenderedView({ text }: { text: string }) {
   const padded = padLines(text);
-  const spans = parseMirc(padded);
+  const lines = padded.split("\n");
+  // Find the consistent width for all lines
+  const lineWidth = Math.max(...lines.map(countVisible), 80);
 
   return (
-    <div className="overflow-x-auto rounded-lg whitespace-pre" style={MONO_STYLE}>
-      {spans.map((span, i) => {
-        const fgc = span.reverse
-          ? (span.bg !== undefined ? MIRC_COLORS[span.bg] : "#1d2021")
-          : (span.fg !== undefined ? MIRC_COLORS[span.fg] : undefined);
-        const bgc = span.reverse
-          ? (span.fg !== undefined ? MIRC_COLORS[span.fg] : undefined)
-          : (span.bg !== undefined ? MIRC_COLORS[span.bg] : undefined);
+    <div className="overflow-x-auto rounded-lg" style={MONO_STYLE}>
+      {lines.map((line, li) => {
+        const spans = parseMirc(line);
         return (
-          <span key={i} style={{
-            color: fgc, backgroundColor: bgc,
-            fontWeight: span.bold ? "bold" : undefined,
-            textDecoration: span.underline ? "underline" : undefined,
-            fontStyle: span.italic ? "italic" : undefined,
-          }}>{span.text}</span>
+          <div
+            key={li}
+            style={{
+              width: `${lineWidth}ch`,
+              whiteSpace: "pre",
+              height: "1.25em",
+              overflow: "hidden",
+            }}
+          >
+            {spans.map((span, si) => {
+              const fgc = span.reverse
+                ? (span.bg !== undefined ? MIRC_COLORS[span.bg] : "#1d2021")
+                : (span.fg !== undefined ? MIRC_COLORS[span.fg] : undefined);
+              const bgc = span.reverse
+                ? (span.fg !== undefined ? MIRC_COLORS[span.fg] : undefined)
+                : (span.bg !== undefined ? MIRC_COLORS[span.bg] : undefined);
+              return (
+                <span key={si} style={{
+                  color: fgc, backgroundColor: bgc,
+                  fontWeight: span.bold ? "bold" : undefined,
+                  textDecoration: span.underline ? "underline" : undefined,
+                  fontStyle: span.italic ? "italic" : undefined,
+                }}>{span.text}</span>
+              );
+            })}
+          </div>
         );
       })}
     </div>
