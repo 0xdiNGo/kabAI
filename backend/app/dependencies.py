@@ -73,10 +73,18 @@ def get_search_provider_repo(database=Depends(get_db)):
 def get_search_service(
     repo: SearchProviderRepository = Depends(get_search_provider_repo),
 ):
-    from cryptography.fernet import Fernet
+    from cryptography.fernet import Fernet, InvalidToken
     from app.config import settings as app_config
     fernet = Fernet(app_config.fernet_key.encode()) if app_config.fernet_key else None
-    decrypt_fn = (lambda x: fernet.decrypt(x.encode()).decode()) if fernet else (lambda x: x)
+
+    def decrypt_fn(val: str) -> str:
+        if not fernet:
+            return val
+        try:
+            return fernet.decrypt(val.encode()).decode()
+        except (InvalidToken, Exception):
+            return val  # Stored unencrypted (legacy) — use as-is
+
     return SearchService(repo, decrypt_fn=decrypt_fn)
 
 

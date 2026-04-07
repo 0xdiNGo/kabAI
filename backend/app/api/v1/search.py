@@ -112,11 +112,19 @@ async def test_search(
     repo: SearchProviderRepository = Depends(get_search_provider_repo),
 ):
     """Test the default search provider with a sample query."""
-    from cryptography.fernet import Fernet
+    from cryptography.fernet import Fernet, InvalidToken
     from app.config import settings as app_config
     from app.services.search_service import SearchService
     fernet = Fernet(app_config.fernet_key.encode()) if app_config.fernet_key else None
-    decrypt_fn = (lambda x: fernet.decrypt(x.encode()).decode()) if fernet else (lambda x: x)
+
+    def decrypt_fn(val: str) -> str:
+        if not fernet:
+            return val
+        try:
+            return fernet.decrypt(val.encode()).decode()
+        except (InvalidToken, Exception):
+            return val
+
     svc = SearchService(repo, decrypt_fn=decrypt_fn)
     results = await svc.search("test query", num_results=3)
     return {
