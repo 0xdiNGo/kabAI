@@ -127,7 +127,7 @@ export function hasMircCodes(text: string): boolean {
 
 // --- Rendered View ---
 
-/** Render a span, replacing █ with CSS cells for pixel-perfect width */
+/** Render a span — only replace pure █ runs with CSS cells, everything else is text */
 function renderSpan(span: Span, key: number) {
   const fgc = span.reverse
     ? (span.bg !== undefined ? MIRC_COLORS[span.bg] : "#1d2021")
@@ -137,67 +137,41 @@ function renderSpan(span: Span, key: number) {
     : (span.bg !== undefined ? MIRC_COLORS[span.bg] : undefined);
 
   const baseStyle: React.CSSProperties = {
+    color: fgc,
+    backgroundColor: bgc,
     fontWeight: span.bold ? "bold" : undefined,
     textDecoration: span.underline ? "underline" : undefined,
     fontStyle: span.italic ? "italic" : undefined,
   };
 
-  // Check if span is all block characters — render as solid color cells
-  if (/^[█▓▒░]+$/.test(span.text)) {
-    const color = fgc || bgc || "#ffffff";
-    // Determine opacity based on block character density
-    const firstChar = span.text[0];
-    const opacity = firstChar === "█" ? 1 : firstChar === "▓" ? 0.75 : firstChar === "▒" ? 0.5 : 0.25;
-    return (
-      <span
-        key={key}
-        style={{
-          ...baseStyle,
-          display: "inline-block",
-          width: `${span.text.length}ch`,
-          height: "1em",
-          backgroundColor: color,
-          opacity,
-        }}
-      />
-    );
+  // Only replace pure █ runs — leave ░▒▓ and everything else as text
+  if (!span.text.includes("█")) {
+    return <span key={key} style={baseStyle}>{span.text}</span>;
   }
 
-  // Check if span mixes block chars with regular text
-  if (span.text.match(/[█▓▒░]/)) {
-    const parts = span.text.split(/([█▓▒░]+)/);
-    return (
-      <span key={key}>
-        {parts.map((part, pi) => {
-          if (/^[█▓▒░]+$/.test(part)) {
-            const color = fgc || bgc || "#ffffff";
-            return (
-              <span
-                key={pi}
-                style={{
-                  ...baseStyle,
-                  display: "inline-block",
-                  width: `${part.length}ch`,
-                  height: "1em",
-                  backgroundColor: color,
-                }}
-              />
-            );
-          }
-          return (
-            <span key={pi} style={{ ...baseStyle, color: fgc, backgroundColor: bgc }}>
-              {part}
-            </span>
-          );
-        })}
-      </span>
-    );
-  }
-
-  // Regular text span
+  // Split on █ runs and render those as CSS cells
+  const parts = span.text.split(/(█+)/);
   return (
-    <span key={key} style={{ ...baseStyle, color: fgc, backgroundColor: bgc }}>
-      {span.text}
+    <span key={key}>
+      {parts.map((part, pi) => {
+        if (/^█+$/.test(part)) {
+          const color = fgc || bgc || "#ffffff";
+          return (
+            <span
+              key={pi}
+              style={{
+                display: "inline-block",
+                width: `${part.length}ch`,
+                height: "1.25em",
+                backgroundColor: color,
+                verticalAlign: "top",
+              }}
+            />
+          );
+        }
+        if (!part) return null;
+        return <span key={pi} style={baseStyle}>{part}</span>;
+      })}
     </span>
   );
 }
