@@ -92,6 +92,88 @@ function hasMircCodes(text: string): boolean {
   return /\\x0[23F]|\\x1[DF]|\\x16/i.test(text);
 }
 
+/** Count visible characters in a line after stripping mIRC/ANSI control codes */
+function countVisible(line: string): number {
+  let s = line
+    .replace(/\\x03/gi, "\x03")
+    .replace(/\\x0F/gi, "\x0F")
+    .replace(/\\x02/gi, "\x02")
+    .replace(/\\x1[DF]/gi, "")
+    .replace(/\\x16/gi, "");
+  // Strip mIRC color codes
+  s = s.replace(/\x03(\d{1,2}(,\d{1,2})?)?/g, "");
+  // Strip ANSI SGR sequences
+  s = s.replace(/\x1b\[[\d;]*m/g, "");
+  // Strip remaining controls
+  s = s.replace(/[\x02\x0F\x1D\x1F\x16]/g, "");
+  return s.length;
+}
+
+/** Normalize all lines to exactly targetWidth visible chars */
+function normalizeLines(text: string, targetWidth = 80): string {
+  const lines = text.split("\n");
+  if (lines.length < 2) return text;
+
+  return lines.map((line) => {
+    const vis = countVisible(line);
+    if (vis === targetWidth) return line;
+    if (vis > targetWidth) {
+      // Truncate from the end — remove visible chars but keep trailing reset
+      return truncateLine(line, targetWidth);
+    }
+    // Pad with spaces before any trailing \x0F
+    const resetSuffix = line.match(/((?:\\x0F)+)$/i);
+    if (resetSuffix) {
+      const base = line.slice(0, -resetSuffix[0].length);
+      return base + " ".repeat(targetWidth - vis) + resetSuffix[0];
+    }
+    return line + " ".repeat(targetWidth - vis);
+  }).join("\n");
+}
+
+/** Truncate a line to exactly targetWidth visible chars, preserving control codes */
+function truncateLine(line: string, targetWidth: number): string {
+  // Normalize escapes
+  const norm = line
+    .replace(/\\x03/gi, "\x03")
+    .replace(/\\x0F/gi, "\x0F")
+    .replace(/\\x02/gi, "\x02")
+    .replace(/\\x1F/gi, "\x1F")
+    .replace(/\\x1D/gi, "\x1D")
+    .replace(/\\x16/gi, "\x16");
+
+  let result = "";
+  let visCount = 0;
+  let i = 0;
+  while (i < norm.length && visCount < targetWidth) {
+    if (norm[i] === "\x03") {
+      result += norm[i]; i++;
+      // Consume digits and comma
+      const m = norm.slice(i).match(/^(\d{1,2}(,\d{1,2})?)/);
+      if (m) { result += m[0]; i += m[0].length; }
+    } else if (norm[i] !== undefined && "\x02\x0F\x1D\x1F\x16".includes(norm[i] as string)) {
+      result += norm[i] as string; i++;
+    } else if (norm[i] === "\x1b" && norm[i + 1] === "[") {
+      // ANSI sequence — copy through
+      const end = norm.indexOf("m", i);
+      if (end !== -1) { result += norm.slice(i, end + 1); i = end + 1; }
+      else { result += norm[i]; i++; }
+    } else {
+      result += norm[i]; i++;
+      visCount++;
+    }
+  }
+  result += "\x0F"; // Ensure reset at end
+  // Convert back to escaped form for consistency
+  return result
+    .replace(/\x03/g, "\\x03")
+    .replace(/\x0F/g, "\\x0F")
+    .replace(/\x02/g, "\\x02")
+    .replace(/\x1F/g, "\\x1F")
+    .replace(/\x1D/g, "\\x1D")
+    .replace(/\x16/g, "\\x16");
+}
+
 const GRUVBOX_THEME = {
   background: "#1d2021",
   foreground: "#ebdbb2",
@@ -151,7 +233,9 @@ const TerminalBlock = memo(function TerminalBlock({ text }: Props) {
     term.open(containerRef.current);
 
     // Write content — convert mIRC to ANSI if needed
-    const content = hasMircCodes(text) ? mircToAnsi(text) : text;
+    // Normalize all lines to exactly 80 visible chars, then convert to ANSI
+    const normalized = hasMircCodes(text) ? normalizeLines(text) : text;
+    const content = hasMircCodes(normalized) ? mircToAnsi(normalized) : normalized;
     const contentLines = content.split("\n");
     for (let i = 0; i < contentLines.length; i++) {
       const line = contentLines[i] ?? "";
