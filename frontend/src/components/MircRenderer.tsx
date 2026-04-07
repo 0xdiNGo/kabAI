@@ -111,7 +111,11 @@ function padLines(text: string, target = 80): string {
   const max = Math.max(...lines.map(countVisible), target);
   return lines.map((l) => {
     const vis = countVisible(l);
-    return vis < max ? l + " ".repeat(max - vis) : l;
+    if (vis < max) {
+      // Reset formatting before padding so spaces don't inherit colors
+      return l + "\\x0F" + " ".repeat(max - vis);
+    }
+    return l;
   }).join("\n");
 }
 
@@ -126,23 +130,13 @@ export function hasMircCodes(text: string): boolean {
 function RenderedView({ text }: { text: string }) {
   const padded = padLines(text);
   const lines = padded.split("\n");
-  // Find the consistent width for all lines
-  const lineWidth = Math.max(...lines.map(countVisible), 80);
 
   return (
-    <div className="overflow-x-auto rounded-lg" style={MONO_STYLE}>
+    <div className="overflow-x-auto rounded-lg whitespace-pre" style={MONO_STYLE}>
       {lines.map((line, li) => {
         const spans = parseMirc(line);
         return (
-          <div
-            key={li}
-            style={{
-              width: `${lineWidth}ch`,
-              whiteSpace: "pre",
-              height: "1.25em",
-              overflow: "hidden",
-            }}
-          >
+          <div key={li}>
             {spans.map((span, si) => {
               const fgc = span.reverse
                 ? (span.bg !== undefined ? MIRC_COLORS[span.bg] : "#1d2021")
