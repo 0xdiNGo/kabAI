@@ -42,7 +42,8 @@ export default function MarkdownContent({ content, className = "" }: Props) {
                   margin: 0,
                   borderRadius: "0.5rem",
                   fontSize: "0.8rem",
-                  background: "rgba(0,0,0,0.3)",
+                  background: "#1d2021",
+                  padding: "1rem",
                 }}
               >
                 {String(children).replace(/\n$/, "")}
