@@ -39,11 +39,16 @@ class VectorService:
                         distance=qmodels.Distance.COSINE,
                     ),
                 )
-                # Create payload index for kb_id filtering
+                # Create payload indexes for kb_id filtering and chronological sorting
                 await self.client.create_payload_index(
                     collection_name=COLLECTION_NAME,
                     field_name="kb_id",
                     field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
+                await self.client.create_payload_index(
+                    collection_name=COLLECTION_NAME,
+                    field_name="source_timestamp",
+                    field_schema=qmodels.PayloadSchemaType.FLOAT,
                 )
                 logger.info("Created Qdrant collection %s (dim=%d)", COLLECTION_NAME, vector_size)
             self._collection_ready = True
@@ -101,7 +106,7 @@ class VectorService:
     async def upsert_items(self, items: list[dict]) -> int:
         """Batch upsert vectors to Qdrant.
 
-        Each item: {id: str, vector: list[float], kb_id: str, title: str}
+        Each item: {id: str, vector: list[float], kb_id: str, title: str, source_timestamp?: float}
         """
         valid = [i for i in items if i.get("vector")]
         if not valid:
@@ -110,14 +115,16 @@ class VectorService:
         vector_size = len(valid[0]["vector"])
         await self._ensure_collection(vector_size)
 
-        points = [
-            qmodels.PointStruct(
+        points = []
+        for item in valid:
+            payload: dict = {"kb_id": item["kb_id"], "title": item.get("title", "")}
+            if item.get("source_timestamp") is not None:
+                payload["source_timestamp"] = float(item["source_timestamp"])
+            points.append(qmodels.PointStruct(
                 id=item["id"],
                 vector=item["vector"],
-                payload={"kb_id": item["kb_id"], "title": item.get("title", "")},
-            )
-            for item in valid
-        ]
+                payload=payload,
+            ))
 
         try:
             await self.client.upsert(

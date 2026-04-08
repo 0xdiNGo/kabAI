@@ -639,7 +639,7 @@ export default function AgentsPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-matrix-accent px-5 py-2.5 text-sm font-medium hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="rounded-lg bg-matrix-accent px-5 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? "Saving..." : editingSlug ? "Save Changes" : "Create Agent"}
               </button>

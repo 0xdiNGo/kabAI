@@ -67,7 +67,7 @@ export default function LoginPage() {
           {error && <p className="text-sm text-matrix-red">{error}</p>}
           <button
             type="submit"
-            className="w-full rounded-lg bg-matrix-accent py-3 font-medium hover:bg-matrix-accent-hover transition-colors"
+            className="w-full rounded-lg bg-matrix-accent py-3 font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors"
           >
             {isRegister ? "Register" : "Sign In"}
           </button>

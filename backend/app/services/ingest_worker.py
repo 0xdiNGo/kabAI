@@ -7,6 +7,8 @@ and updates counts periodically (not per-item).
 
 import asyncio
 import logging
+import re
+from datetime import datetime, timezone
 
 
 from app.models.knowledge_base import KnowledgeItem
@@ -100,6 +102,7 @@ class IngestWorker:
         knowledge_items = []
         for item in items:
             title = self._scripted_title(item.content)
+            source_timestamp = self._extract_timestamp(item.content, item.source)
             knowledge_items.append(KnowledgeItem(
                 knowledge_base_id=item.kb_id,
                 batch_id=item.batch_id,
@@ -107,6 +110,7 @@ class IngestWorker:
                 content=item.content,
                 source=item.source,
                 chunk_index=item.chunk_index,
+                source_timestamp=source_timestamp,
             ))
 
         # Bulk insert all KnowledgeItems at once
@@ -171,6 +175,48 @@ class IngestWorker:
         self._items_since_job_check.clear()
 
     @staticmethod
+    def _extract_timestamp(content: str, source: str | None = None) -> datetime | None:
+        """Extract the earliest recognizable timestamp from content or source.
+
+        Tries ISO 8601 first (most precise), then common log/date formats.
+        Pure CPU — no LLM call. Returns None if nothing parseable is found.
+        """
+        ISO_RE = re.compile(
+            r"\b(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+            r"(?:[T ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:Z|[+-]\d{2}:?\d{2})?)?)"
+        )
+
+        candidates: list[str] = []
+        if source:
+            m = ISO_RE.search(source)
+            if m:
+                candidates.append(m.group(1))
+
+        sample = content[:2000]
+        for m in ISO_RE.finditer(sample):
+            candidates.append(m.group(1))
+            if len(candidates) >= 5:
+                break
+
+        for raw in candidates:
+            try:
+                raw = raw.replace(" ", "T")
+                if "T" not in raw:
+                    raw += "T00:00:00"
+                if re.match(r".*T\d{2}:\d{2}$", raw):
+                    raw += ":00"
+                raw_parsed = raw.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(raw_parsed)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if 1970 <= dt.year <= 2100:
+                    return dt
+            except ValueError:
+                continue
+
+        return None
+
+    @staticmethod
     def _scripted_title(content: str) -> str:
         """Extract a title from content without LLM — instant and free."""
         for line in content.split("\n"):
@@ -194,15 +240,17 @@ class IngestWorker:
             vector_items = []
             for ki, item_id, emb in zip(knowledge_items, item_ids, embeddings):
                 if emb:
-                    vector_items.append({
+                    entry: dict = {
                         "id": item_id,
                         "vector": emb,
                         "kb_id": ki.knowledge_base_id,
                         "title": ki.title,
-                    })
+                    }
+                    if ki.source_timestamp is not None:
+                        entry["source_timestamp"] = ki.source_timestamp.timestamp()
+                    vector_items.append(entry)
 
             if vector_items:
                 await self.vector_service.upsert_items(vector_items)
         except Exception as e:
             logger.warning("Vector embedding/upsert failed (non-fatal): %s", e)
-

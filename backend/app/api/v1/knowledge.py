@@ -16,12 +16,14 @@ class KBCreate(BaseModel):
     name: str
     description: str = ""
     ingest_model: str | None = None
+    chronological_mode: str = "off"  # "on" | "off" | "auto"
 
 
 class KBUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     ingest_model: str | None = None
+    chronological_mode: str | None = None
 
 
 class KBResponse(BaseModel):
@@ -29,6 +31,7 @@ class KBResponse(BaseModel):
     name: str
     description: str
     ingest_model: str | None
+    chronological_mode: str
     item_count: int
     created_at: str
     updated_at: str
@@ -83,6 +86,7 @@ async def list_knowledge_bases(
             name=kb.name,
             description=kb.description,
             ingest_model=kb.ingest_model,
+            chronological_mode=getattr(kb, "chronological_mode", "off"),
             item_count=kb.item_count,
             created_at=kb.created_at.isoformat(),
             updated_at=kb.updated_at.isoformat(),
@@ -99,7 +103,9 @@ async def create_knowledge_base(
 ):
     kb = KnowledgeBase(
         name=body.name, description=body.description,
-        ingest_model=body.ingest_model, created_by=admin.id,
+        ingest_model=body.ingest_model,
+        chronological_mode=body.chronological_mode,
+        created_by=admin.id,
     )
     kb_id = await repo.create_base(kb)
     return {"id": kb_id}
@@ -285,6 +291,8 @@ async def get_knowledge_base(
         id=kb.id,
         name=kb.name,
         description=kb.description,
+        ingest_model=kb.ingest_model,
+        chronological_mode=getattr(kb, "chronological_mode", "off"),
         item_count=kb.item_count,
         created_at=kb.created_at.isoformat(),
         updated_at=kb.updated_at.isoformat(),
@@ -301,12 +309,14 @@ async def update_knowledge_base(
     kb = await repo.find_base_by_id(kb_id)
     if not kb:
         raise NotFoundError("KnowledgeBase", kb_id)
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
     raw = body.model_dump(exclude_unset=False)
+    updates = {k: v for k, v in raw.items() if v is not None}
     if "ingest_model" in raw:
         updates["ingest_model"] = raw["ingest_model"]
     if "name" in raw and raw["name"]:
         updates["name"] = raw["name"]
+    if "chronological_mode" in raw and raw["chronological_mode"]:
+        updates["chronological_mode"] = raw["chronological_mode"]
     if updates:
         await repo.update_base(kb_id, updates)
     return {"message": "Knowledge base updated"}

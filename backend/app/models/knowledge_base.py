@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,6 +9,7 @@ class KnowledgeBase(BaseModel):
     name: str
     description: str = ""
     ingest_model: str | None = None  # Model used for titling/analysis; None = system default
+    chronological_mode: Literal["on", "off", "auto"] = "off"
     created_by: str | None = None
     item_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -31,4 +33,5 @@ class KnowledgeItem(BaseModel):
     content: str
     source: str | None = None
     chunk_index: int = 0
+    source_timestamp: datetime | None = None  # Extracted timestamp from content (for chronological ordering)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

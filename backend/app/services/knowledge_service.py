@@ -717,6 +717,20 @@ class KnowledgeService:
 
     # --- Retrieval ---
 
+    # Temporal query keywords that trigger chronological ordering in "auto" mode
+    _TEMPORAL_KEYWORDS = frozenset({
+        "when", "timeline", "sequence", "order", "chronolog", "history",
+        "first", "last", "latest", "earliest", "recent", "before", "after",
+        "since", "until", "during", "between", "progression", "evolution",
+        "changed", "happened", "occurred", "next", "previous", "then",
+        "date", "time", "day", "week", "month", "year",
+    })
+
+    def _is_temporal_query(self, query: str) -> bool:
+        """Return True if query appears to be asking about chronological relationships."""
+        q = query.lower()
+        return any(kw in q for kw in self._TEMPORAL_KEYWORDS)
+
     async def retrieve(
         self, query: str, kb_ids: list[str], limit: int = 20
     ) -> list[KnowledgeItem]:
@@ -728,7 +742,23 @@ class KnowledgeService:
         3. Keyword search with extracted key terms (strips filler words)
 
         Results are deduplicated and merged using weighted score fusion.
+        When chronological_mode is "on" or detected in "auto", results are
+        re-sorted by source_timestamp ascending after retrieval.
         """
+        # Determine chronological ordering based on KB settings
+        chronological = False
+        if kb_ids:
+            try:
+                kb = await self.repo.find_base_by_id(kb_ids[0])
+                if kb:
+                    mode = getattr(kb, "chronological_mode", "off")
+                    if mode == "on":
+                        chronological = True
+                    elif mode == "auto":
+                        chronological = self._is_temporal_query(query)
+            except Exception:
+                pass
+
         # Extract key terms for a supplementary keyword search
         key_terms = self._extract_key_terms(query)
 
@@ -778,10 +808,17 @@ class KnowledgeService:
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         result = [all_items[item_id] for item_id, _ in ranked[:limit] if item_id in all_items]
 
+        # Chronological re-sort: items with timestamps go first (ascending), rest after
+        if chronological:
+            with_ts = [i for i in result if getattr(i, "source_timestamp", None) is not None]
+            without_ts = [i for i in result if getattr(i, "source_timestamp", None) is None]
+            with_ts.sort(key=lambda i: i.source_timestamp)
+            result = with_ts + without_ts
+
         logger.info(
-            "KB retrieval: query=%r vector=%d text=%d terms=%d merged=%d",
+            "KB retrieval: query=%r vector=%d text=%d terms=%d merged=%d chronological=%s",
             query[:60], len(vector_ids_scores), len(text_results),
-            len(terms_results), len(result),
+            len(terms_results), len(result), chronological,
         )
         return result
 

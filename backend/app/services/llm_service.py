@@ -9,6 +9,22 @@ from app.models.agent import Agent
 from app.repositories.settings_repo import SettingsRepository
 from app.services.provider_service import ProviderService
 
+
+def _clean_error(e: Exception) -> str:
+    """Extract a human-readable message from litellm/provider exceptions."""
+    msg = str(e)
+    # litellm often wraps the raw JSON body — extract the message field if present
+    if "overloaded" in msg.lower():
+        return "The AI provider is temporarily overloaded. Please try again in a moment."
+    if "rate_limit" in msg.lower() or "429" in msg:
+        return "Rate limit exceeded. Please wait a moment and try again."
+    if "authentication" in msg.lower() or "401" in msg:
+        return "Authentication error with the AI provider. Check your API key."
+    # Truncate very long error messages
+    if len(msg) > 200:
+        msg = msg[:200] + "..."
+    return msg
+
 SEARCH_TOOL_DEFINITION = {
     "type": "function",
     "function": {
@@ -139,6 +155,7 @@ class LLMService:
             messages=full_messages,
             temperature=agent.temperature if agent else 0.7,
             max_tokens=agent.max_tokens if agent else 4096,
+            num_retries=3,
             **kwargs,
         )
         choice = response.choices[0]
@@ -169,14 +186,19 @@ class LLMService:
 
         yield json.dumps({"type": "status", "status": "connecting"})
 
-        response = await litellm.acompletion(
-            model=model,
-            messages=full_messages,
-            temperature=agent.temperature if agent else 0.7,
-            max_tokens=agent.max_tokens if agent else 4096,
-            stream=True,
-            **kwargs,
-        )
+        try:
+            response = await litellm.acompletion(
+                model=model,
+                messages=full_messages,
+                temperature=agent.temperature if agent else 0.7,
+                max_tokens=agent.max_tokens if agent else 4096,
+                stream=True,
+                num_retries=3,
+                **kwargs,
+            )
+        except Exception as e:
+            yield json.dumps({"type": "error", "detail": f"LLM provider error: {_clean_error(e)}"})
+            return
 
         yield json.dumps({"type": "status", "status": "generating"})
 
@@ -251,6 +273,7 @@ class LLMService:
                     max_tokens=agent.max_tokens if agent else 4096,
                     tools=available_tools,
                     tool_choice="auto",
+                    num_retries=3,
                     **kwargs,
                 )
 
@@ -337,12 +360,17 @@ class LLMService:
                 if m.get("tool_calls"):
                     m = {k: v for k, v in m.items() if k != "tool_calls"}
             clean_messages.append(m)
-        response = await litellm.acompletion(
-            model=model, messages=clean_messages,
-            temperature=agent.temperature if agent else 0.7,
-            max_tokens=agent.max_tokens if agent else 4096,
-            stream=True, **kwargs,
-        )
+        try:
+            response = await litellm.acompletion(
+                model=model, messages=clean_messages,
+                temperature=agent.temperature if agent else 0.7,
+                max_tokens=agent.max_tokens if agent else 4096,
+                stream=True, num_retries=3, **kwargs,
+            )
+        except Exception as e:
+            yield json.dumps({"type": "error", "detail": f"LLM provider error: {_clean_error(e)}"})
+            return
+
         full_content = ""
         async for chunk in response:
             delta = chunk.choices[0].delta

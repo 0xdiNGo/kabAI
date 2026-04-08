@@ -274,20 +274,10 @@ export default function DashboardPage() {
             ) : (
               <div
                 key={agent.id}
-                className={`rounded-xl bg-matrix-card p-5 text-left transition-all relative ${editingSlug === agent.slug ? "ring-2 ring-matrix-accent z-10" : "hover:bg-matrix-input cursor-pointer"}`}
+                className={`rounded-xl bg-matrix-card p-5 text-left transition-all relative flex flex-col ${editingSlug === agent.slug ? "ring-2 ring-matrix-accent z-10" : "hover:bg-matrix-input cursor-pointer"}`}
                 onClick={() => { if (editingSlug !== agent.slug) startAgentChat(agent.id); }}
               >
-                <div className="flex items-start justify-between">
-                  <h3 className="font-semibold">{agent.name}</h3>
-                  {user?.role === "admin" && (
-                    <button
-                      onClick={(e) => openInlineEdit(e, agent.slug)}
-                      className={`rounded px-2 py-0.5 text-xs transition-colors ${editingSlug === agent.slug ? "bg-matrix-accent text-matrix-bg" : "text-matrix-text-faint hover:text-matrix-text hover:bg-matrix-card"}`}
-                    >
-                      {editingSlug === agent.slug ? "Close" : "Edit"}
-                    </button>
-                  )}
-                </div>
+                <h3 className="font-semibold">{agent.name}</h3>
 
                 {/* Normal card content */}
                 {editingSlug !== agent.slug && (
@@ -303,7 +293,35 @@ export default function DashboardPage() {
                         <span key={s} className="rounded-full bg-matrix-input px-2 py-0.5 text-xs text-matrix-text">{s}</span>
                       ))}
                     </div>
+                    <div className="mt-auto pt-4 flex gap-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startAgentChat(agent.id); }}
+                        className="flex-1 rounded-lg bg-matrix-accent py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors"
+                      >
+                        Start Chat
+                      </button>
+                      {user?.role === "admin" && (
+                        <button
+                          onClick={(e) => openInlineEdit(e, agent.slug)}
+                          className="rounded-lg border border-matrix-border px-4 py-2 text-sm text-matrix-text-dim hover:text-matrix-text-bright hover:bg-matrix-input transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
                   </>
+                )}
+
+                {/* Close button when editing */}
+                {editingSlug === agent.slug && (
+                  <div className="flex justify-end mt-1">
+                    <button
+                      onClick={(e) => openInlineEdit(e, agent.slug)}
+                      className="rounded px-2 py-0.5 text-xs bg-matrix-accent text-matrix-bg transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
                 )}
 
                 {/* Inline edit form — full agent editor */}
@@ -456,7 +474,7 @@ export default function DashboardPage() {
               <button
                 onClick={startRawChat}
                 disabled={!selectedModel}
-                className="mt-3 w-full rounded-lg bg-matrix-accent py-2 text-sm font-medium hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="mt-3 w-full rounded-lg bg-matrix-accent py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Start Chat
               </button>

@@ -222,7 +222,7 @@ export default function ProvidersPage() {
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium hover:bg-matrix-accent-hover transition-colors"
+            className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors"
           >
             Add Provider
           </button>
@@ -627,7 +627,7 @@ export default function ProvidersPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-lg bg-matrix-accent px-5 py-2.5 text-sm font-medium hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="rounded-lg bg-matrix-accent px-5 py-2.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? "Saving..." : "Add Provider"}
               </button>

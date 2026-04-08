@@ -1,6 +1,6 @@
 # kabAI
 
-**kabAI** */kah-BYE/* — from *kabAInet* (קַבָּלָה): the received wisdom. **AI that receives, reasons, and reveals.**
+**kabAI** */kah-BYE/* — from *kabbalah* (קַבָּלָה): the received wisdom. **AI that receives, reasons, and reveals.**
 
 ---
 

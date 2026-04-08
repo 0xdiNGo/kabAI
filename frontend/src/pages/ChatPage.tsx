@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { streamPost } from "@/lib/sse";
 import { HelpTip } from "@/components/Tooltip";
@@ -282,6 +282,7 @@ const AGENT_COLORS = [
 
 export default function ChatPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [webSearch, setWebSearch] = useState(false);
@@ -393,8 +394,10 @@ export default function ChatPage() {
             },
           );
         }
-      } catch {
-        // ignore
+      } catch (err: unknown) {
+        if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 404) {
+          navigate("/");
+        }
       }
     };
     load();
@@ -607,6 +610,12 @@ export default function ChatPage() {
     // If we were streaming but never got a 'done' event, the connection dropped
     setIsStreaming((prev) => {
       if (prev) {
+        // Check if the conversation was deleted — if so, navigate away instead of showing error
+        api.get(`/conversations/${conversationId}`).catch((err: unknown) => {
+          if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 404) {
+            navigate("/");
+          }
+        });
         setMessages((msgs) => [
           ...msgs,
           {
@@ -621,7 +630,7 @@ export default function ChatPage() {
     });
     updateCurrentAgent(null);
     setIsThinking(false);
-  }, []);
+  }, [conversationId, navigate]);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || !conversationId) return;
@@ -1026,7 +1035,7 @@ export default function ChatPage() {
           <button
             onClick={sendMessage}
             disabled={!input.trim() || (isStreaming && !isKabAInet)}
-            className="rounded-xl bg-matrix-accent px-6 py-3 font-medium hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="rounded-xl bg-matrix-accent px-6 py-3 font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>
