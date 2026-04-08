@@ -163,6 +163,11 @@ class ConversationService:
         )
         await self.conversation_repo.add_message(conversation_id, assistant_msg)
 
+        # Auto-generate title after first exchange (fire-and-forget)
+        asyncio.create_task(
+            self._maybe_generate_title(conversation_id, content, result["content"])
+        )
+
         return {
             "message": assistant_msg,
             "model_used": result["model_used"],
@@ -238,7 +243,43 @@ class ConversationService:
                     model_used=event.get("model_used"),
                 )
                 await self.conversation_repo.add_message(conversation_id, assistant_msg)
+                # Auto-generate title after first exchange (fire-and-forget)
+                asyncio.create_task(
+                    self._maybe_generate_title(conversation_id, content, full_content)
+                )
             await queue.put(event_data)
+
+    async def _maybe_generate_title(
+        self, conversation_id: str, user_content: str, assistant_content: str
+    ) -> None:
+        """Generate a title for a conversation after its first exchange. Fire-and-forget."""
+        try:
+            convo = await self.conversation_repo.find_by_id(conversation_id)
+            if not convo or convo.title:
+                return  # Already has a title
+
+            # Only auto-title after the first user+assistant pair
+            msg_count = len(convo.messages)
+            if msg_count > 3:
+                return  # Not the first exchange
+
+            prompt = (
+                "Generate a short, descriptive title (max 6 words) for this conversation. "
+                "Return ONLY the title text, no quotes, no punctuation at the end.\n\n"
+                f"User: {user_content[:300]}\n"
+                f"Assistant: {assistant_content[:300]}"
+            )
+            result = await self.llm_service.complete_simple(
+                [{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=30,
+                task_type="title",
+            )
+            title = result["content"].strip().strip('"').strip("'").strip(".")
+            if title:
+                await self.conversation_repo.update_title(conversation_id, title)
+        except Exception:
+            pass  # Title generation is best-effort
 
     async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
         return await self.conversation_repo.delete(conversation_id, user_id)

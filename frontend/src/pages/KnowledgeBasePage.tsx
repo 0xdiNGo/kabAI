@@ -7,7 +7,7 @@ interface KB {
   description: string;
   ingest_model: string | null;
   chronological_mode: "on" | "off" | "auto";
-  retrieval_mode: "search" | "full";
+  retrieval_mode: "search" | "full" | "auto";
   item_count: number;
 }
 
@@ -41,9 +41,9 @@ export default function KnowledgeBasePage() {
   const [editDesc, setEditDesc] = useState("");
   const [editModel, setEditModel] = useState("");
   const [chronologicalMode, setChronologicalMode] = useState<"on" | "off" | "auto">("off");
-  const [retrievalMode, setRetrievalMode] = useState<"search" | "full">("search");
+  const [retrievalMode, setRetrievalMode] = useState<"search" | "full" | "auto">("auto");
   const [editChronologicalMode, setEditChronologicalMode] = useState<"on" | "off" | "auto">("off");
-  const [editRetrievalMode, setEditRetrievalMode] = useState<"search" | "full">("search");
+  const [editRetrievalMode, setEditRetrievalMode] = useState<"search" | "full" | "auto">("auto");
   const [tab, setTab] = useState<Tab>("items");
   const [items, setItems] = useState<KBItem[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -70,6 +70,7 @@ export default function KnowledgeBasePage() {
     available_models: Record<string, string[]>;
     analyzed_with: string;
   } | null>(null);
+  const [kbSizeBytes, setKbSizeBytes] = useState<number | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [ingestResult, setIngestResult] = useState("");
@@ -116,10 +117,24 @@ export default function KnowledgeBasePage() {
       const queueActive = s.pending > 0 || s.processing > 0;
       const hasActive = queueActive || taskRunning;
       setIngesting(hasActive);
+
+      // Refresh jobs and item count while active
+      if (queueActive && selectedKB) {
+        loadJobsDetail(selectedKB.id);
+        // Refresh item count (not the full item list — just the count)
+        api.get<{ count: number }>(`/knowledge-bases/${selectedKB.id}/item-count`).then((r) => setItemTotal(r.count)).catch(() => {});
+      }
+
       if (!hasActive && pollRef.current) {
         clearInterval(pollRef.current); pollRef.current = null;
         setIngestStatus(null);
+        setIngestResult("");  // Clear stale upload messages
         loadKBs();
+        // Load final job status so user can see what happened
+        if (selectedKB) {
+          loadJobsDetail(selectedKB.id);
+          fetchKBSize(selectedKB.id);
+        }
       }
     } catch { /* ignore */ }
     pollingRef.current = false;
@@ -150,12 +165,15 @@ export default function KnowledgeBasePage() {
   const [itemPage, setItemPage] = useState(0);
   const ITEMS_PER_PAGE = 100;
   const [itemTotal, setItemTotal] = useState(0);
-  const loadItems = async (kb: KB, page = 0) => {
+  const loadItems = async (kb: KB | { id: string; item_count?: number }, page = 0) => {
     const offset = page * ITEMS_PER_PAGE;
-    const fetched = await api.get<KBItem[]>(`/knowledge-bases/${kb.id}/items?limit=${ITEMS_PER_PAGE}&offset=${offset}`);
+    const [fetched, countResp] = await Promise.all([
+      api.get<KBItem[]>(`/knowledge-bases/${kb.id}/items?limit=${ITEMS_PER_PAGE}&offset=${offset}`),
+      api.get<{ count: number }>(`/knowledge-bases/${kb.id}/item-count`).catch(() => null),
+    ]);
     setItems(fetched);
     setItemPage(page);
-    setItemTotal(kb.item_count);
+    setItemTotal(countResp?.count ?? ("item_count" in kb ? kb.item_count ?? 0 : 0));
   };
   const loadBatches = async (kbId: string) => { setBatches(await api.get<Batch[]>(`/knowledge-bases/${kbId}/batches`)); };
   const loadSources = async (kbId: string) => { setSources(await api.get<{ source: string | null; count: number }[]>(`/knowledge-bases/${kbId}/sources`)); };
@@ -166,18 +184,37 @@ export default function KnowledgeBasePage() {
     api.get<{ huggingface_enabled: boolean }>("/settings").then((s) => setHfEnabled(s.huggingface_enabled)).catch(() => {});
   }, []);
 
+  const fetchKBSize = async (kbId: string) => {
+    try {
+      const r = await api.get<{ total_bytes: number }>(`/knowledge-bases/${kbId}/size-estimate`);
+      setKbSizeBytes(r.total_bytes);
+    } catch { setKbSizeBytes(null); }
+  };
+
+  const WARN_BYTES = 120_000;  // 120 KB
+  const MAX_BYTES = 400_000;   // 400 KB
+
+  const fullContextWarning = (bytes: number | null): { level: "ok" | "warn" | "danger" | "block"; message: string } | null => {
+    if (bytes === null) return null;
+    if (bytes > MAX_BYTES) return { level: "block", message: `KB is ${(bytes / 1_000_000).toFixed(1)} MB — far too large for full context. This WILL fail or produce degraded results. Use search mode.` };
+    if (bytes > WARN_BYTES * 2) return { level: "danger", message: `KB is ${Math.round(bytes / 1_000)} KB — well above the recommended 120 KB limit. Expect high cost, slow responses, and missed details.` };
+    if (bytes > WARN_BYTES) return { level: "warn", message: `KB is ${Math.round(bytes / 1_000)} KB — above the recommended 120 KB. May increase cost and latency.` };
+    return { level: "ok", message: `KB is ${Math.round(bytes / 1_000)} KB — good for full context.` };
+  };
+
   const selectKB = async (kb: KB) => {
     setSelectedKB(kb); setSearchResults(null); setSearchQuery(""); setEditingKB(false);
     setEditName(kb.name); setEditDesc(kb.description); setEditModel(kb.ingest_model ?? "");
     setEditChronologicalMode(kb.chronological_mode ?? "off");
-    setEditRetrievalMode(kb.retrieval_mode ?? "search");
+    setEditRetrievalMode(kb.retrieval_mode ?? "auto");
+    setKbSizeBytes(null);
     // Clear ingest state
     setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false); setAiDeepResearch(false); setRfcAnalysis(true); setHfRepoId(""); setHfSubset(""); setHfMaxRows("500");
     // Stop any active polling and clear all ingest state
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     setIngesting(false); setIngestResult(""); setJobs([]); setExpandedItem(null);
     setStagedFile(null); setAnalysis(null); setIngestStatus(null); setItemPage(0);
-    await Promise.all([loadItems(kb), loadBatches(kb.id), loadSources(kb.id)]);
+    await Promise.all([loadItems(kb), loadBatches(kb.id), loadSources(kb.id), fetchKBSize(kb.id)]);
 
     // Check for active ingestion via fast global endpoint + per-KB task status
     try {
@@ -194,7 +231,7 @@ export default function KnowledgeBasePage() {
   const createKB = async (e: React.FormEvent) => {
     e.preventDefault();
     await api.post("/knowledge-bases", { name, description, ingest_model: ingestModel || null, chronological_mode: chronologicalMode, retrieval_mode: retrievalMode });
-    setName(""); setDescription(""); setIngestModel(""); setChronologicalMode("off"); setRetrievalMode("search"); setShowCreate(false); loadKBs();
+    setName(""); setDescription(""); setIngestModel(""); setChronologicalMode("off"); setRetrievalMode("auto"); setShowCreate(false); loadKBs();
   };
 
   const updateKB = async () => {
@@ -413,14 +450,15 @@ export default function KnowledgeBasePage() {
             <div className="flex items-center gap-3">
               <span className="text-sm text-matrix-text-dim">Retrieval:</span>
               <div className="flex rounded-lg overflow-hidden border border-matrix-border text-xs">
-                {(["search", "full"] as const).map((mode) => (
+                {(["search", "auto", "full"] as const).map((mode) => (
                   <button key={mode} type="button" onClick={() => setRetrievalMode(mode)}
                     className={`px-3 py-1.5 capitalize transition-colors ${retrievalMode === mode ? "bg-matrix-accent text-matrix-bg font-medium" : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text"}`}>
-                    {mode === "search" ? "Search" : "Full Context"}
+                    {mode === "search" ? "Search" : mode === "full" ? "Full Context" : "Auto"}
                   </button>
                 ))}
               </div>
-              {retrievalMode === "full" && <span className="text-xs text-matrix-text-faint">injects entire KB as context — best for small KBs</span>}
+              {retrievalMode === "auto" && <span className="text-xs text-matrix-text-faint">uses full context for small KBs, search for large</span>}
+              {retrievalMode === "full" && <span className="text-xs text-matrix-text-faint">injects entire KB — best for KBs under 120 KB</span>}
             </div>
             <div className="flex gap-2">
               <button type="submit" className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">Create</button>
@@ -475,20 +513,44 @@ export default function KnowledgeBasePage() {
                       {editChronologicalMode === "auto" && <span className="text-xs text-matrix-text-faint">detects temporal queries</span>}
                       {editChronologicalMode === "on" && <span className="text-xs text-matrix-text-faint">always sort by timestamp</span>}
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-matrix-text-dim">Retrieval:</span>
-                      <div className="flex rounded-lg overflow-hidden border border-matrix-border text-xs">
-                        {(["search", "full"] as const).map((mode) => (
-                          <button key={mode} type="button" onClick={() => setEditRetrievalMode(mode)}
-                            className={`px-3 py-1.5 capitalize transition-colors ${editRetrievalMode === mode ? "bg-matrix-accent text-matrix-bg font-medium" : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text"}`}>
-                            {mode === "search" ? "Search" : "Full Context"}
-                          </button>
-                        ))}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-matrix-text-dim">Retrieval:</span>
+                        <div className="flex rounded-lg overflow-hidden border border-matrix-border text-xs">
+                          {(["search", "auto", "full"] as const).map((mode) => (
+                            <button key={mode} type="button" onClick={() => {
+                              setEditRetrievalMode(mode);
+                              if (mode === "full" && selectedKB && kbSizeBytes === null) fetchKBSize(selectedKB.id);
+                            }}
+                              className={`px-3 py-1.5 capitalize transition-colors ${editRetrievalMode === mode ? "bg-matrix-accent text-matrix-bg font-medium" : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text"}`}>
+                              {mode === "search" ? "Search" : mode === "full" ? "Full Context" : "Auto"}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      {editRetrievalMode === "full" && <span className="text-xs text-matrix-text-faint">injects entire KB — best for small KBs</span>}
+                      {editRetrievalMode === "auto" && (
+                        <span className="text-xs text-matrix-text-faint">uses full context for small KBs (&lt;120 KB), search for large</span>
+                      )}
+                      {editRetrievalMode === "full" && (() => {
+                        const warning = fullContextWarning(kbSizeBytes);
+                        if (!warning) return <span className="text-xs text-matrix-text-faint">Checking KB size...</span>;
+                        const colorClass = warning.level === "block" ? "text-matrix-red font-medium"
+                          : warning.level === "danger" ? "text-matrix-red"
+                          : warning.level === "warn" ? "text-matrix-accent"
+                          : "text-matrix-green";
+                        return (
+                          <div className="flex items-start gap-2">
+                            <span className={`text-xs ${colorClass}`}>
+                              {warning.level === "block" ? "⛔ " : warning.level === "danger" ? "⚠️ " : warning.level === "warn" ? "⚠ " : "✓ "}
+                              {warning.message}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={updateKB} className="rounded-lg bg-matrix-accent px-3 py-1.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">Save</button>
+                      <button onClick={updateKB} disabled={editRetrievalMode === "full" && kbSizeBytes !== null && kbSizeBytes > MAX_BYTES}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${editRetrievalMode === "full" && kbSizeBytes !== null && kbSizeBytes > MAX_BYTES ? "bg-matrix-input text-matrix-text-faint cursor-not-allowed" : "bg-matrix-accent text-matrix-bg hover:bg-matrix-accent-hover"}`}>Save</button>
                       <button onClick={() => setEditingKB(false)} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Cancel</button>
                     </div>
                   </div>
@@ -505,14 +567,25 @@ export default function KnowledgeBasePage() {
                           </span>
                         )}
                         {selectedKB.retrieval_mode === "full" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-matrix-green/10 text-matrix-green border border-matrix-green/20">
-                            full context
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                            kbSizeBytes !== null && kbSizeBytes > MAX_BYTES
+                              ? "bg-matrix-red/10 text-matrix-red border-matrix-red/20"
+                              : kbSizeBytes !== null && kbSizeBytes > WARN_BYTES
+                              ? "bg-matrix-accent/10 text-matrix-accent border-matrix-accent/20"
+                              : "bg-matrix-green/10 text-matrix-green border-matrix-green/20"
+                          }`}>
+                            full context{kbSizeBytes !== null && kbSizeBytes > MAX_BYTES ? " (too large!)" : kbSizeBytes !== null && kbSizeBytes > WARN_BYTES ? " (large)" : ""}
+                          </span>
+                        )}
+                        {selectedKB.retrieval_mode === "auto" && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-matrix-accent/10 text-matrix-accent border border-matrix-accent/20">
+                            auto retrieval
                           </span>
                         )}
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => setEditingKB(true)} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Edit</button>
+                      <button onClick={() => { setEditingKB(true); if (selectedKB) fetchKBSize(selectedKB.id); }} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Edit</button>
                       <button onClick={exportKB} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Export</button>
                     </div>
                   </div>
@@ -815,102 +888,106 @@ export default function KnowledgeBasePage() {
                     </div>
                   )}
 
-                  {/* Ingest progress */}
-                  {queueStatus && queueStatus.total > 0 && (() => {
-                    const totalDone = queueStatus.done;
-                    const totalAll = queueStatus.total;
-                    const overallPct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
-                    const isActive = queueStatus.pending > 0 || queueStatus.processing > 0;
+                  {/* Active queue */}
+                  {queueStatus && (queueStatus.pending > 0 || queueStatus.processing > 0) && (() => {
+                    const activeCount = queueStatus.pending + queueStatus.processing;
+                    const activeJobs = jobs.filter((j) => j.pending > 0 || j.processing > 0);
 
+                    return (
+                      <div className="rounded-lg bg-matrix-input p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="flex gap-0.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "0ms" }} />
+                              <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
+                              <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
+                            </div>
+                            <span className="text-sm text-matrix-text-bright">
+                              {activeCount.toLocaleString()} chunks in queue
+                            </span>
+                            <span className="text-xs text-matrix-text-faint">
+                              ({queueStatus.processing} processing)
+                            </span>
+                          </div>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!selectedKB) return;
+                              const jbs = await api.get<typeof jobs>(`/knowledge-bases/${selectedKB.id}/jobs`);
+                              for (const j of jbs) {
+                                if (j.pending > 0 || j.processing > 0) await cancelJob(j.job_id);
+                              }
+                              pollProgress();
+                            }}
+                            className="rounded bg-matrix-card px-2 py-0.5 text-xs text-matrix-red hover:bg-matrix-hover transition-colors"
+                          >
+                            Cancel All
+                          </button>
+                        </div>
+                        {activeJobs.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {activeJobs.map((job) => {
+                              const pct = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+                              return (
+                                <div key={job.job_id} className="space-y-0.5">
+                                  <div className="flex items-center justify-between text-xs px-1">
+                                    <span className="text-matrix-text truncate max-w-[60%]">
+                                      {job.source || "Text ingest"}
+                                    </span>
+                                    <span className="text-matrix-text-dim">
+                                      {job.done}/{job.total} ({pct}%)
+                                      {job.failed > 0 && <span className="text-matrix-red ml-1">({job.failed} err)</span>}
+                                    </span>
+                                  </div>
+                                  <div className="h-1 rounded-full bg-matrix-card overflow-hidden mx-1">
+                                    <div className="h-full bg-matrix-accent rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {queueStatus.failed > 0 && (
+                          <div className="mt-2 text-xs text-matrix-red px-1">
+                            {queueStatus.failed} chunks failed
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Job history — visible when there are completed/failed jobs even if queue is idle */}
+                  {jobs.length > 0 && (() => {
+                    const completedJobs = jobs.filter((j) => j.pending === 0 && j.processing === 0);
+                    if (completedJobs.length === 0) return null;
+                    const hasFailures = completedJobs.some((j) => j.failed > 0);
                     return (
                       <div
                         className="rounded-lg bg-matrix-input p-3 cursor-pointer"
                         onClick={() => setShowDetailPanel(!showDetailPanel)}
                       >
-                        {/* Summary line + progress bar */}
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-matrix-text-dim">
+                            {hasFailures ? "Recent jobs (some failed)" : "Recent jobs"}
+                          </span>
                           <div className="flex items-center gap-2">
-                            {isActive && (
-                              <div className="flex gap-0.5">
-                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "0ms" }} />
-                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "150ms" }} />
-                                <span className="h-1.5 w-1.5 rounded-full bg-matrix-accent animate-bounce" style={{ animationDelay: "300ms" }} />
-                              </div>
-                            )}
-                            <span className="text-sm text-matrix-text-bright">
-                              {isActive
-                                ? `Processing: ${totalDone.toLocaleString()} / ${totalAll.toLocaleString()} chunks`
-                                : `Complete: ${totalDone.toLocaleString()} chunks`}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-matrix-accent">{overallPct}%</span>
-                            {isActive && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (!selectedKB) return;
-                                  const jbs = await api.get<typeof jobs>(`/knowledge-bases/${selectedKB.id}/jobs`);
-                                  for (const j of jbs) {
-                                    if (j.pending > 0 || j.processing > 0) await cancelJob(j.job_id);
-                                  }
-                                  pollProgress();
-                                }}
-                                className="rounded bg-matrix-card px-2 py-0.5 text-xs text-matrix-red hover:bg-matrix-hover transition-colors"
-                              >
-                                Cancel All
-                              </button>
-                            )}
+                            {hasFailures && <span className="h-2 w-2 rounded-full bg-matrix-red" />}
+                            <span className="text-xs text-matrix-text-faint">{showDetailPanel ? "hide" : "show"}</span>
                           </div>
                         </div>
-                        <div className="h-2 rounded-full bg-matrix-card overflow-hidden">
-                          <div className="h-full bg-matrix-accent rounded-full transition-all duration-500" style={{ width: `${overallPct}%` }} />
-                        </div>
-
-                        {/* Expanded detail panel — loads job detail on demand */}
                         {showDetailPanel && (
-                          <div className="mt-3 border-t border-matrix-border pt-3 space-y-2">
-                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-                              <span className="text-matrix-text-faint">Chunks processed</span>
-                              <span className="text-matrix-text">{totalDone.toLocaleString()} / {totalAll.toLocaleString()}</span>
-                              <span className="text-matrix-text-faint">Pending</span>
-                              <span className="text-matrix-text">{queueStatus.pending.toLocaleString()}</span>
-                              <span className="text-matrix-text-faint">Processing</span>
-                              <span className="text-matrix-text">{queueStatus.processing}</span>
-                              {queueStatus.failed > 0 && (
-                                <>
-                                  <span className="text-matrix-text-faint">Failed</span>
-                                  <span className="text-matrix-red">{queueStatus.failed}</span>
-                                </>
-                              )}
-                            </div>
-
-                            {/* Per-segment detail — loaded on demand */}
-                            {jobs.length > 0 ? (
-                              <div className="max-h-40 overflow-y-auto space-y-0.5">
-                                {jobs.map((job) => {
-                                  const jdone = job.pending === 0 && job.processing === 0;
-                                  return (
-                                    <div key={job.job_id} className="flex items-center justify-between text-xs px-1">
-                                      <span className={jdone ? "text-matrix-text-faint" : "text-matrix-text"}>
-                                        {job.source || "Text ingest"}
-                                      </span>
-                                      <span className={jdone ? "text-matrix-green" : "text-matrix-text-dim"}>
-                                        {job.done}/{job.total}
-                                        {job.failed > 0 && <span className="text-matrix-red ml-1">({job.failed} err)</span>}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
+                          <div className="mt-2 max-h-40 overflow-y-auto space-y-0.5">
+                            {completedJobs.slice(0, 15).map((job) => (
+                              <div key={job.job_id} className="flex items-center justify-between text-xs px-1">
+                                <span className="text-matrix-text-faint truncate max-w-[60%]">
+                                  {job.source || "Text ingest"}
+                                </span>
+                                <span className={job.failed > 0 ? "text-matrix-red" : "text-matrix-green"}>
+                                  {job.done}/{job.total}
+                                  {job.failed > 0 && <span className="ml-1">({job.failed} failed)</span>}
+                                </span>
                               </div>
-                            ) : (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); if (selectedKB) loadJobsDetail(selectedKB.id); }}
-                                className="text-xs text-matrix-accent hover:underline"
-                              >
-                                Load segment details
-                              </button>
-                            )}
+                            ))}
                           </div>
                         )}
                       </div>

@@ -51,6 +51,12 @@ class ConversationRepository:
         )
         return result.modified_count > 0
 
+    async def update_title(self, conversation_id: str, title: str) -> None:
+        await self.collection.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$set": {"title": title}},
+        )
+
     async def update_summary(self, conversation_id: str, summary: str) -> None:
         await self.collection.update_one(
             {"_id": ObjectId(conversation_id)},

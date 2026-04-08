@@ -284,11 +284,22 @@ class LLMService:
         yield json.dumps({"type": "status", "status": "generating"})
 
         full_content = ""
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                full_content += delta.content
-                yield json.dumps({"type": "token", "content": delta.content})
+        try:
+            async for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    full_content += delta.content
+                    yield json.dumps({"type": "token", "content": delta.content})
+        except Exception as e:
+            yield json.dumps({"type": "error", "detail": f"Stream interrupted: {_clean_error(e)}"})
+            return
+
+        if not full_content.strip():
+            yield json.dumps({
+                "type": "error",
+                "detail": f"Model {model} returned an empty response. It may be overloaded or unable to handle this request. Try again or switch models.",
+            })
+            return
 
         # Log usage (estimate tokens from content length for streaming)
         await self._log_usage(model, "chat", duration_ms=int((time.monotonic() - t0) * 1000))
@@ -456,11 +467,23 @@ class LLMService:
             return
 
         full_content = ""
-        async for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                full_content += delta.content
-                yield json.dumps({"type": "token", "content": delta.content})
+        try:
+            async for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    full_content += delta.content
+                    yield json.dumps({"type": "token", "content": delta.content})
+        except Exception as e:
+            yield json.dumps({"type": "error", "detail": f"Stream interrupted: {_clean_error(e)}"})
+            return
+
+        if not full_content.strip():
+            yield json.dumps({
+                "type": "error",
+                "detail": f"Model {model} returned an empty response. It may be overloaded or unable to handle this request. Try again or switch models.",
+            })
+            return
+
         yield json.dumps({"type": "done", "model_used": model, "content": full_content})
 
     def _build_messages(

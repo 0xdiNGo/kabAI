@@ -66,13 +66,9 @@ function AppearanceSection() {
   const themeId = useThemeStore((s) => s.themeId);
   const accentId = useThemeStore((s) => s.accentId);
   const glass = useThemeStore((s) => s.glass);
-  const background = useThemeStore((s) => s.background);
-  const rainBaseSpeed = useThemeStore((s) => s.rainBaseSpeed);
   const setThemeId = useThemeStore((s) => s.setThemeId);
   const setAccentId = useThemeStore((s) => s.setAccentId);
   const setGlass = useThemeStore((s) => s.setGlass);
-  const setBackground = useThemeStore((s) => s.setBackground);
-  const setRainBaseSpeed = useThemeStore((s) => s.setRainBaseSpeed);
 
   return (
     <div className="mb-6 rounded-xl bg-matrix-card p-5">
@@ -147,43 +143,6 @@ function AppearanceSection() {
         </label>
       </div>
 
-      {/* Background */}
-      <div className="pt-3 mt-3 border-t border-matrix-border">
-        <span className="text-sm text-matrix-text-dim block mb-2">Background</span>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {[
-            { id: "none", label: "None" },
-            { id: "matrix-rain", label: "Matrix Rain" },
-          ].map((bg) => (
-            <button
-              key={bg.id}
-              onClick={() => setBackground(bg.id)}
-              className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
-                background === bg.id
-                  ? "ring-2 ring-matrix-accent bg-matrix-input text-matrix-text-bright"
-                  : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text hover:bg-matrix-hover"
-              }`}
-            >
-              {bg.label}
-            </button>
-          ))}
-        </div>
-
-        {background === "matrix-rain" && (
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-matrix-text-dim shrink-0">Speed:</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={Math.round(rainBaseSpeed * 100)}
-              onChange={(e) => setRainBaseSpeed(Number(e.target.value) / 100)}
-              className="flex-1 h-1.5 rounded-full appearance-none bg-matrix-input accent-matrix-accent"
-            />
-            <span className="text-xs text-matrix-text-faint w-8 text-right">{Math.round(rainBaseSpeed * 100)}%</span>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

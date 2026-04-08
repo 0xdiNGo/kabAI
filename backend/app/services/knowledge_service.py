@@ -756,13 +756,17 @@ class KnowledgeService:
         full_context_kb_ids: list[str] = []
         search_kb_ids: list[str] = []
 
+        auto_kb_ids: list[str] = []
+
         if kb_ids:
             try:
                 kbs = await self.repo.find_bases_by_ids(kb_ids)
                 for kb in kbs:
-                    retrieval_mode = getattr(kb, "retrieval_mode", "search")
+                    retrieval_mode = getattr(kb, "retrieval_mode", "auto")
                     if retrieval_mode == "full":
                         full_context_kb_ids.append(kb.id)
+                    elif retrieval_mode == "auto":
+                        auto_kb_ids.append(kb.id)
                     else:
                         search_kb_ids.append(kb.id)
 
@@ -776,14 +780,53 @@ class KnowledgeService:
             except Exception:
                 search_kb_ids = kb_ids
 
-        # Full-context KBs: load all items directly
+        # Auto-mode: check KB size and route to full or search
+        FULL_CONTEXT_AUTO_BYTES = 120_000   # 120 KB — auto mode threshold
+        FULL_CONTEXT_WARN_BYTES = 120_000   # 120 KB — warn above this
+        FULL_CONTEXT_MAX_BYTES = 400_000    # 400 KB — refuse above this
+
+        if auto_kb_ids:
+            auto_sizes = await asyncio.gather(
+                *[self.repo.estimate_content_size(kid) for kid in auto_kb_ids]
+            )
+            for kid, size in zip(auto_kb_ids, auto_sizes):
+                if size <= FULL_CONTEXT_AUTO_BYTES and size > 0:
+                    logger.info("KB %s auto → full-context (%.0f KB)", kid, size / 1_000)
+                    full_context_kb_ids.append(kid)
+                else:
+                    logger.info("KB %s auto → search (%.0f KB)", kid, size / 1_000)
+                    search_kb_ids.append(kid)
+
         full_context_items: list[KnowledgeItem] = []
         if full_context_kb_ids:
-            all_items_lists = await asyncio.gather(
-                *[self.repo.find_all_items_by_base(kid) for kid in full_context_kb_ids]
+            # Check sizes and demote oversized KBs to search mode
+            sizes = await asyncio.gather(
+                *[self.repo.estimate_content_size(kid) for kid in full_context_kb_ids]
             )
-            for items_list in all_items_lists:
-                full_context_items.extend(items_list)
+            approved_ids: list[str] = []
+            for kid, size in zip(full_context_kb_ids, sizes):
+                if size > FULL_CONTEXT_MAX_BYTES:
+                    logger.warning(
+                        "KB %s is %.1f MB — too large for full-context (max %.0f KB). Falling back to search.",
+                        kid, size / 1_000_000, FULL_CONTEXT_MAX_BYTES / 1_000,
+                    )
+                    search_kb_ids.append(kid)
+                elif size > FULL_CONTEXT_WARN_BYTES:
+                    logger.warning(
+                        "KB %s is %.0f KB — exceeds recommended %.0f KB for full-context. Performance may degrade.",
+                        kid, size / 1_000, FULL_CONTEXT_WARN_BYTES / 1_000,
+                    )
+                    approved_ids.append(kid)
+                else:
+                    approved_ids.append(kid)
+            full_context_kb_ids = approved_ids
+
+            if full_context_kb_ids:
+                all_items_lists = await asyncio.gather(
+                    *[self.repo.find_all_items_by_base(kid) for kid in full_context_kb_ids]
+                )
+                for items_list in all_items_lists:
+                    full_context_items.extend(items_list)
 
         # If all KBs are full-context, skip search entirely
         if not search_kb_ids:

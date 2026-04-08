@@ -10,7 +10,7 @@ class KnowledgeBase(BaseModel):
     description: str = ""
     ingest_model: str | None = None  # Model used for titling/analysis; None = system default
     chronological_mode: Literal["on", "off", "auto"] = "off"
-    retrieval_mode: Literal["search", "full"] = "search"  # "full" injects entire KB as context
+    retrieval_mode: Literal["search", "full", "auto"] = "auto"  # "auto" picks based on KB size
     created_by: str | None = None
     item_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

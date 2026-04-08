@@ -156,6 +156,15 @@ class KnowledgeRepository:
             items.append(KnowledgeItem(**doc))
         return items
 
+    async def estimate_content_size(self, kb_id: str) -> int:
+        """Estimate total content size in bytes for a KB (sum of content field lengths)."""
+        pipeline = [
+            {"$match": {"knowledge_base_id": kb_id}},
+            {"$group": {"_id": None, "total_bytes": {"$sum": {"$strLenBytes": "$content"}}}},
+        ]
+        result = await self.items.aggregate(pipeline).to_list(1)
+        return result[0]["total_bytes"] if result else 0
+
     async def find_all_items_by_base(self, kb_id: str) -> list[KnowledgeItem]:
         items = []
         async for doc in self.items.find({"knowledge_base_id": kb_id}).sort("chunk_index", 1):

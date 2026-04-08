@@ -5,7 +5,6 @@ import { streamPost } from "@/lib/sse";
 import { HelpTip } from "@/components/Tooltip";
 import MarkdownContent from "@/components/MarkdownContent";
 import type { ConversationDetail, Message } from "@/types/conversation";
-import { useThemeStore } from "@/stores/themeStore";
 
 const IDLE_PHRASES = [
   "reading your diary...",
@@ -284,8 +283,6 @@ const AGENT_COLORS = [
 export default function ChatPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
-  const background = useThemeStore((s) => s.background);
-  const setStreamingIntensity = useThemeStore((s) => s.setStreamingIntensity);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [webSearch, setWebSearch] = useState(false);
@@ -411,27 +408,6 @@ export default function ChatPage() {
     };
   }, [conversationId]);
 
-  // Matrix rain intensity ramp — ramps up over 60s while streaming, fades when done
-  useEffect(() => {
-    if (background !== "matrix-rain") return;
-    if (!isStreaming) {
-      // Fade out over ~4s
-      let current = 0;
-      const iv = setInterval(() => {
-        current += 0.05;
-        setStreamingIntensity(Math.max(0, 1 - current));
-        if (current >= 1) clearInterval(iv);
-      }, 200);
-      return () => clearInterval(iv);
-    }
-    // Ramp up over 60s
-    const startTime = Date.now();
-    const iv = setInterval(() => {
-      const elapsed = (Date.now() - startTime) / 1000;
-      setStreamingIntensity(Math.min(1, elapsed / 60));
-    }, 500);
-    return () => clearInterval(iv);
-  }, [isStreaming, background, setStreamingIntensity]);
 
   // Throttle scroll-to-bottom during streaming (every 200ms, not every token)
   const lastScrollRef = useRef(0);

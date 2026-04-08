@@ -117,6 +117,17 @@ async def create_knowledge_base(
     return {"id": kb_id}
 
 
+@router.get("/{kb_id}/size-estimate", response_model=dict)
+async def size_estimate(
+    kb_id: str,
+    repo: KnowledgeRepository = Depends(get_knowledge_repo),
+    _user=Depends(get_current_user),
+):
+    """Estimate total content size in bytes for a KB."""
+    total_bytes = await repo.estimate_content_size(kb_id)
+    return {"kb_id": kb_id, "total_bytes": total_bytes}
+
+
 @router.get("/queue-status", response_model=dict)
 async def queue_status(
     request: Request,
@@ -522,6 +533,17 @@ async def cancel_job(
     return {"pending_deleted": deleted}
 
 
+
+
+@router.get("/{kb_id}/item-count", response_model=dict)
+async def item_count(
+    kb_id: str,
+    _user=Depends(get_current_user),
+    repo: KnowledgeRepository = Depends(get_knowledge_repo),
+):
+    """Live item count for a KB (not cached)."""
+    count = await repo.items.count_documents({"knowledge_base_id": kb_id})
+    return {"count": count}
 
 
 @router.get("/{kb_id}/items", response_model=list[KBItemResponse])

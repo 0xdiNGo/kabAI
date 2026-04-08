@@ -62,6 +62,7 @@ export default function MatrixRain({ baseSpeed, intensity }: Props) {
 
     let lastTime = 0;
     let frameAccum = 0;
+    let cleanupCounter = 0;
 
     const draw = (timestamp: number) => {
       animId = requestAnimationFrame(draw);
@@ -86,9 +87,20 @@ export default function MatrixRain({ baseSpeed, intensity }: Props) {
       const steps = Math.floor(frameAccum);
       frameAccum -= steps;
 
-      // Fade trail
-      ctx.fillStyle = `rgba(0, 0, 0, ${lerp(0.06, 0.15, drive)})`;
+      // Fade trail — normal alpha fade
+      const fadeAlpha = lerp(0.1, 0.18, drive);
+      ctx.fillStyle = `rgba(0, 0, 0, ${fadeAlpha})`;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Gradual artifact cleanup: paint a thin opaque black stripe each frame,
+      // sweeping the full canvas over ~5 seconds. This kills sub-pixel ghosts
+      // that the alpha fade can never fully erase (8-bit rounding).
+      const CLEAR_CYCLE_FRAMES = 300;
+      cleanupCounter = (cleanupCounter + steps) % CLEAR_CYCLE_FRAMES;
+      const stripeH = Math.max(1, Math.ceil(canvas.height / CLEAR_CYCLE_FRAMES) * steps);
+      const stripeY = Math.floor((cleanupCounter / CLEAR_CYCLE_FRAMES) * canvas.height);
+      ctx.fillStyle = "rgb(0, 0, 0)";
+      ctx.fillRect(0, stripeY, canvas.width, stripeH);
 
       ctx.font = `${FONT_SIZE}px monospace`;
 
