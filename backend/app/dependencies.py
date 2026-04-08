@@ -12,6 +12,7 @@ from app.repositories.knowledge_repo import KnowledgeRepository
 from app.repositories.search_provider_repo import SearchProviderRepository
 from app.repositories.provider_repo import ProviderRepository
 from app.repositories.settings_repo import SettingsRepository
+from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
@@ -70,8 +71,13 @@ def get_search_provider_repo(database=Depends(get_db)):
     return SearchProviderRepository(database)
 
 
+def get_usage_repo(database=Depends(get_db)):
+    return UsageRepository(database)
+
+
 def get_search_service(
     repo: SearchProviderRepository = Depends(get_search_provider_repo),
+    usage_repo: UsageRepository = Depends(get_usage_repo),
 ):
     from cryptography.fernet import Fernet, InvalidToken
     from app.config import settings as app_config
@@ -85,7 +91,9 @@ def get_search_service(
         except (InvalidToken, Exception):
             return val  # Stored unencrypted (legacy) — use as-is
 
-    return SearchService(repo, decrypt_fn=decrypt_fn)
+    svc = SearchService(repo, decrypt_fn=decrypt_fn)
+    svc.usage_repo = usage_repo
+    return svc
 
 
 # Services
@@ -106,8 +114,11 @@ def get_provider_service(
 def get_llm_service(
     provider_service: ProviderService = Depends(get_provider_service),
     settings_repo: SettingsRepository = Depends(get_settings_repo),
+    usage_repo: UsageRepository = Depends(get_usage_repo),
 ):
-    return LLMService(provider_service, settings_repo)
+    svc = LLMService(provider_service, settings_repo)
+    svc.usage_repo = usage_repo
+    return svc
 
 
 def get_vector_service(

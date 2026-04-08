@@ -13,6 +13,7 @@ from app.core.redis import redis_client
 from app.repositories.exemplar_repo import ExemplarRepository
 from app.repositories.ingest_queue_repo import IngestQueueRepository
 from app.repositories.knowledge_repo import KnowledgeRepository
+from app.repositories.usage_repo import UsageRepository
 from app.services.background_manager import BackgroundTaskManager
 from app.services.ingest_manager import IngestManager
 from app.services.ingest_worker import IngestWorker
@@ -37,6 +38,9 @@ async def lifespan(app: FastAPI):
     await agents_coll.create_index([("created_at", -1)])
     queue_repo = IngestQueueRepository(db.db)
     await queue_repo.ensure_indexes()
+    usage_repo = UsageRepository(db.db)
+    await usage_repo.ensure_indexes()
+    app.state.usage_repo = usage_repo
 
     # Start ingest worker
     from app.repositories.provider_repo import ProviderRepository
@@ -49,6 +53,7 @@ async def lifespan(app: FastAPI):
     settings_repo_inst = SettingsRepository(db.db)
     provider_service = ProviderService(provider_repo, redis_client.client)
     llm_service = LLMService(provider_service, settings_repo_inst)
+    llm_service.usage_repo = usage_repo
 
     vector_service = VectorService(qdrant_conn.client, llm_service, settings_repo_inst)
     app.state.vector_service = vector_service

@@ -27,6 +27,24 @@ class SearchService:
     def __init__(self, repo: SearchProviderRepository, decrypt_fn=None):
         self.repo = repo
         self._decrypt = decrypt_fn or (lambda x: x)
+        self.usage_repo = None  # Optional UsageRepository for tracking
+
+    async def _log_kagi_usage(self, data: dict, task_type: str = "search") -> None:
+        """Extract api_balance from Kagi response meta and log it."""
+        if not self.usage_repo:
+            return
+        try:
+            from app.models.usage_log import UsageLog
+            meta = data.get("meta", {})
+            balance = meta.get("api_balance")
+            ms = meta.get("ms")
+            entry = UsageLog(
+                provider="kagi", model=None, task_type=task_type,
+                balance_usd=balance, duration_ms=int(ms) if ms else None,
+            )
+            await self.usage_repo.log(entry)
+        except Exception:
+            pass
 
     async def search(
         self, query: str, num_results: int = 5,
@@ -101,6 +119,7 @@ class SearchService:
             )
             resp.raise_for_status()
             data = resp.json()
+        await self._log_kagi_usage(data, "search")
         results = []
         for item in data.get("data", [])[:n]:
             if item.get("t") == 0:  # organic result
@@ -125,7 +144,9 @@ class SearchService:
                 headers=headers,
             )
             resp.raise_for_status()
-            data = resp.json().get("data", {})
+            full_resp = resp.json()
+            data = full_resp.get("data", {})
+        await self._log_kagi_usage(full_resp, "fastgpt")
 
         results = []
         # The synthesized answer is the primary result
@@ -156,6 +177,7 @@ class SearchService:
             )
             resp.raise_for_status()
             data = resp.json()
+        await self._log_kagi_usage(data, "search")
         return [
             SearchResult(
                 title=item.get("title", ""),
@@ -197,7 +219,9 @@ class SearchService:
                     headers=headers,
                 )
             resp.raise_for_status()
-            data = resp.json().get("data", {})
+            full_resp = resp.json()
+            data = full_resp.get("data", {})
+        await self._log_kagi_usage(full_resp, "summarize")
         return data.get("output")
 
     async def _search_google(self, query: str, api_key: str | None, cx: str, n: int) -> list[SearchResult]:

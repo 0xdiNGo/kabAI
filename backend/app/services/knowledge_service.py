@@ -736,30 +736,67 @@ class KnowledgeService:
     ) -> list[KnowledgeItem]:
         """Multi-strategy hybrid retrieval for maximum recall.
 
-        Runs up to 3 search strategies in parallel:
+        Supports two retrieval modes per KB:
+        - "search" (default): hybrid vector+keyword retrieval with parent-doc expansion
+        - "full": injects the entire KB as context (best for small, focused KBs)
+
+        For search mode, runs up to 3 search strategies in parallel:
         1. Vector similarity search (semantic matching via Qdrant)
         2. Full-text keyword search (MongoDB $text)
         3. Keyword search with extracted key terms (strips filler words)
 
         Results are deduplicated and merged using weighted score fusion.
+        When a chunk matches, sibling chunks from the same source document are
+        pulled in to provide full document context.
         When chronological_mode is "on" or detected in "auto", results are
         re-sorted by source_timestamp ascending after retrieval.
         """
-        # Determine chronological ordering based on KB settings
+        # Check KB settings
         chronological = False
+        full_context_kb_ids: list[str] = []
+        search_kb_ids: list[str] = []
+
         if kb_ids:
             try:
-                kb = await self.repo.find_base_by_id(kb_ids[0])
-                if kb:
-                    mode = getattr(kb, "chronological_mode", "off")
-                    if mode == "on":
-                        chronological = True
-                    elif mode == "auto":
-                        chronological = self._is_temporal_query(query)
+                kbs = await self.repo.find_bases_by_ids(kb_ids)
+                for kb in kbs:
+                    retrieval_mode = getattr(kb, "retrieval_mode", "search")
+                    if retrieval_mode == "full":
+                        full_context_kb_ids.append(kb.id)
+                    else:
+                        search_kb_ids.append(kb.id)
+
+                    # Chronological from first KB (as before)
+                    if kb.id == kb_ids[0]:
+                        mode = getattr(kb, "chronological_mode", "off")
+                        if mode == "on":
+                            chronological = True
+                        elif mode == "auto":
+                            chronological = self._is_temporal_query(query)
             except Exception:
-                pass
+                search_kb_ids = kb_ids
+
+        # Full-context KBs: load all items directly
+        full_context_items: list[KnowledgeItem] = []
+        if full_context_kb_ids:
+            all_items_lists = await asyncio.gather(
+                *[self.repo.find_all_items_by_base(kid) for kid in full_context_kb_ids]
+            )
+            for items_list in all_items_lists:
+                full_context_items.extend(items_list)
+
+        # If all KBs are full-context, skip search entirely
+        if not search_kb_ids:
+            if chronological:
+                with_ts = [i for i in full_context_items if getattr(i, "source_timestamp", None) is not None]
+                without_ts = [i for i in full_context_items if getattr(i, "source_timestamp", None) is None]
+                with_ts.sort(key=lambda i: i.source_timestamp)
+                full_context_items = with_ts + without_ts
+            logger.info("KB retrieval: full-context mode, %d items from %d KBs", len(full_context_items), len(full_context_kb_ids))
+            return full_context_items
 
         # Extract key terms for a supplementary keyword search
+        kb_ids = search_kb_ids  # Only search non-full KBs
         key_terms = self._extract_key_terms(query)
 
         # Run all searches in parallel
@@ -808,6 +845,45 @@ class KnowledgeService:
         ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
         result = [all_items[item_id] for item_id, _ in ranked[:limit] if item_id in all_items]
 
+        # Parent-document expansion: for the top-scoring chunks, pull in neighboring
+        # chunks from the same source to provide surrounding context. Conservative:
+        # only expand top 3 sources, include ±2 siblings around each matched chunk.
+        MAX_EXPAND_SOURCES = 3
+        MAX_TOTAL = 40
+        expanded: list[KnowledgeItem] = []
+        seen_ids: set[str] = set()
+        seen_sources: set[tuple[str, str | None]] = set()
+        for item in result:
+            if len(expanded) >= MAX_TOTAL:
+                break
+            if item.id in seen_ids:
+                continue
+            source_key = (item.knowledge_base_id, item.source)
+            if item.source and source_key not in seen_sources and len(seen_sources) < MAX_EXPAND_SOURCES:
+                seen_sources.add(source_key)
+                siblings = await self.repo.find_items_by_source(
+                    item.knowledge_base_id, item.source
+                )
+                # Find this chunk's position and include ±2 neighbors
+                idx = next((i for i, s in enumerate(siblings) if s.id == item.id), 0)
+                start = max(0, idx - 2)
+                end = min(len(siblings), idx + 3)
+                for sib in siblings[start:end]:
+                    if sib.id not in seen_ids:
+                        seen_ids.add(sib.id)
+                        expanded.append(sib)
+            elif item.id not in seen_ids:
+                seen_ids.add(item.id)
+                expanded.append(item)
+        result = expanded
+
+        # Merge in full-context items (from KBs in "full" mode)
+        if full_context_items:
+            existing_ids = {i.id for i in result}
+            for item in full_context_items:
+                if item.id not in existing_ids:
+                    result.append(item)
+
         # Chronological re-sort: items with timestamps go first (ascending), rest after
         if chronological:
             with_ts = [i for i in result if getattr(i, "source_timestamp", None) is not None]
@@ -816,9 +892,10 @@ class KnowledgeService:
             result = with_ts + without_ts
 
         logger.info(
-            "KB retrieval: query=%r vector=%d text=%d terms=%d merged=%d chronological=%s",
+            "KB retrieval: query=%r vector=%d text=%d terms=%d merged=%d expanded=%d full_ctx=%d chronological=%s",
             query[:60], len(vector_ids_scores), len(text_results),
-            len(terms_results), len(result), chronological,
+            len(terms_results), len(ranked[:limit]), len(expanded),
+            len(full_context_items), chronological,
         )
         return result
 

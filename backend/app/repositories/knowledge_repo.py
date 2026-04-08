@@ -177,6 +177,50 @@ class KnowledgeRepository:
         result = await self.items.delete_one({"_id": ObjectId(item_id)})
         return result.deleted_count > 0
 
+    async def find_items_by_source(
+        self, kb_id: str, source: str
+    ) -> list[KnowledgeItem]:
+        """Get all chunks from a specific source document, ordered by chunk_index."""
+        items = []
+        cursor = self.items.find(
+            {"knowledge_base_id": kb_id, "source": source}
+        ).sort("chunk_index", 1)
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            items.append(KnowledgeItem(**doc))
+        return items
+
+    async def find_digests_by_base(self, kb_id: str) -> list[KnowledgeItem]:
+        """Get all digest items for a knowledge base, ordered by created_at descending."""
+        items = []
+        cursor = self.items.find(
+            {"knowledge_base_id": kb_id, "item_type": "digest"}
+        ).sort("created_at", -1)
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            items.append(KnowledgeItem(**doc))
+        return items
+
+    async def find_chunks_by_source(
+        self, kb_id: str, source: str
+    ) -> list[KnowledgeItem]:
+        """Get all chunk items from a specific source, ordered by chunk_index ascending.
+
+        Includes items where item_type is "chunk" or item_type is absent (backwards compat).
+        """
+        items = []
+        cursor = self.items.find(
+            {
+                "knowledge_base_id": kb_id,
+                "source": source,
+                "$or": [{"item_type": "chunk"}, {"item_type": {"$exists": False}}],
+            }
+        ).sort("chunk_index", 1)
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            items.append(KnowledgeItem(**doc))
+        return items
+
     async def delete_items_by_source(self, kb_id: str, source: str) -> int:
         result = await self.items.delete_many(
             {"knowledge_base_id": kb_id, "source": source}

@@ -17,6 +17,7 @@ class KBCreate(BaseModel):
     description: str = ""
     ingest_model: str | None = None
     chronological_mode: str = "off"  # "on" | "off" | "auto"
+    retrieval_mode: str = "search"  # "search" | "full"
 
 
 class KBUpdate(BaseModel):
@@ -24,6 +25,7 @@ class KBUpdate(BaseModel):
     description: str | None = None
     ingest_model: str | None = None
     chronological_mode: str | None = None
+    retrieval_mode: str | None = None
 
 
 class KBResponse(BaseModel):
@@ -32,6 +34,7 @@ class KBResponse(BaseModel):
     description: str
     ingest_model: str | None
     chronological_mode: str
+    retrieval_mode: str
     item_count: int
     created_at: str
     updated_at: str
@@ -43,6 +46,7 @@ class KBItemResponse(BaseModel):
     content: str
     source: str | None
     chunk_index: int
+    item_type: str = "chunk"
 
 
 class AnalyzeRequest(BaseModel):
@@ -87,6 +91,7 @@ async def list_knowledge_bases(
             description=kb.description,
             ingest_model=kb.ingest_model,
             chronological_mode=getattr(kb, "chronological_mode", "off"),
+            retrieval_mode=getattr(kb, "retrieval_mode", "search"),
             item_count=kb.item_count,
             created_at=kb.created_at.isoformat(),
             updated_at=kb.updated_at.isoformat(),
@@ -105,6 +110,7 @@ async def create_knowledge_base(
         name=body.name, description=body.description,
         ingest_model=body.ingest_model,
         chronological_mode=body.chronological_mode,
+        retrieval_mode=body.retrieval_mode,
         created_by=admin.id,
     )
     kb_id = await repo.create_base(kb)
@@ -293,6 +299,7 @@ async def get_knowledge_base(
         description=kb.description,
         ingest_model=kb.ingest_model,
         chronological_mode=getattr(kb, "chronological_mode", "off"),
+        retrieval_mode=getattr(kb, "retrieval_mode", "search"),
         item_count=kb.item_count,
         created_at=kb.created_at.isoformat(),
         updated_at=kb.updated_at.isoformat(),
@@ -317,6 +324,8 @@ async def update_knowledge_base(
         updates["name"] = raw["name"]
     if "chronological_mode" in raw and raw["chronological_mode"]:
         updates["chronological_mode"] = raw["chronological_mode"]
+    if "retrieval_mode" in raw and raw["retrieval_mode"]:
+        updates["retrieval_mode"] = raw["retrieval_mode"]
     if updates:
         await repo.update_base(kb_id, updates)
     return {"message": "Knowledge base updated"}
@@ -531,6 +540,7 @@ async def list_items(
             content=item.content,
             source=item.source,
             chunk_index=item.chunk_index,
+            item_type=getattr(item, "item_type", "chunk"),
         )
         for item in items
     ]
@@ -630,6 +640,7 @@ async def search_kb(
             content=item.content,
             source=item.source,
             chunk_index=item.chunk_index,
+            item_type=getattr(item, "item_type", "chunk"),
         )
         for item in items
     ]

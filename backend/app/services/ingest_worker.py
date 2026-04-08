@@ -24,6 +24,14 @@ STALE_TIMEOUT = 120
 COUNT_UPDATE_INTERVAL = 50  # update KB item count every N items
 JOB_CHECK_INTERVAL = 100  # check job completion every N items
 
+DIGEST_PROMPT = (
+    "You are a data analyst. Summarize the following content into a structured digest. "
+    "Include: key topics discussed, participants/entities mentioned, notable patterns or trends, "
+    "sentiment/tone, and any significant events or decisions. "
+    "Be comprehensive but concise. Use bullet points for clarity.\n\n"
+    "Content:\n{content}"
+)
+
 
 class IngestWorker:
     def __init__(
@@ -149,6 +157,15 @@ class IngestWorker:
             if count >= JOB_CHECK_INTERVAL:
                 progress = await self.queue_repo.get_job_progress(job_id)
                 if progress["pending"] == 0 and progress["processing"] == 0:
+                    # Generate digest for completed source before purging queue items
+                    job_doc = await self.queue_repo.collection.find_one({"job_id": job_id})
+                    if job_doc:
+                        source = job_doc.get("source")
+                        batch_id_val = job_doc.get("batch_id")
+                        kb_id_val = job_doc.get("kb_id")
+                        if source and kb_id_val:
+                            await self._generate_source_digest(kb_id_val, source, batch_id_val or "")
+
                     purged = await self.queue_repo.purge_done_for_job(job_id)
                     if purged:
                         print(f"[worker] job {job_id} complete, purged {purged} items", flush=True)
@@ -228,6 +245,68 @@ class IngestWorker:
                         return line[:idx + len(end)].strip()
                 return line[:100].strip()
         return content[:80].strip() or "Untitled"
+
+    async def _generate_source_digest(self, kb_id: str, source: str, batch_id: str) -> None:
+        """Generate a digest summary for all chunks from a single source document."""
+        try:
+            # Get all chunks for this source
+            chunks = await self.knowledge_repo.find_items_by_source(kb_id, source)
+            if not chunks or len(chunks) < 2:
+                return  # Don't digest single-chunk sources
+
+            # Combine chunk content (cap at ~50k chars to stay within context limits)
+            combined = ""
+            for chunk in chunks:
+                combined += chunk.content + "\n\n"
+                if len(combined) > 50000:
+                    combined = combined[:50000] + "\n\n[... truncated ...]"
+                    break
+
+            # Resolve model — use system default
+            model = await self.llm_service.resolve_model(None, None)
+
+            # Generate digest via LLM
+            prompt = DIGEST_PROMPT.format(content=combined)
+            messages = [{"role": "user", "content": prompt}]
+
+            digest_content = await self.llm_service.complete_simple(model, messages, temperature=0.3, max_tokens=2048)
+            if not digest_content:
+                return
+
+            # Build title for the digest
+            source_label = source or "unknown"
+            if len(source_label) > 60:
+                source_label = "..." + source_label[-57:]
+            title = f"[Digest] {source_label}"
+
+            # Extract timestamp from source chunks (use earliest)
+            timestamps = [c.source_timestamp for c in chunks if c.source_timestamp]
+            earliest_ts = min(timestamps) if timestamps else None
+
+            # Store as a KnowledgeItem with item_type="digest"
+            digest_item = KnowledgeItem(
+                knowledge_base_id=kb_id,
+                batch_id=batch_id,
+                title=title,
+                content=digest_content,
+                source=source,
+                chunk_index=0,
+                item_type="digest",
+                digest_scope="source",
+                source_timestamp=earliest_ts,
+            )
+            inserted_ids = await self.knowledge_repo.add_items_bulk([digest_item])
+
+            # Embed the digest in Qdrant too
+            if inserted_ids and self.vector_service:
+                await self._embed_and_upsert([digest_item], inserted_ids)
+
+            # Update item count
+            await self.knowledge_repo.update_item_count(kb_id)
+            logger.info("Generated source digest for %s in KB %s", source, kb_id)
+
+        except Exception as e:
+            logger.warning("Failed to generate digest for source %s in KB %s: %s", source, kb_id, e)
 
     async def _embed_and_upsert(
         self, knowledge_items: list, item_ids: list[str]

@@ -7,6 +7,7 @@ interface KB {
   description: string;
   ingest_model: string | null;
   chronological_mode: "on" | "off" | "auto";
+  retrieval_mode: "search" | "full";
   item_count: number;
 }
 
@@ -40,7 +41,9 @@ export default function KnowledgeBasePage() {
   const [editDesc, setEditDesc] = useState("");
   const [editModel, setEditModel] = useState("");
   const [chronologicalMode, setChronologicalMode] = useState<"on" | "off" | "auto">("off");
+  const [retrievalMode, setRetrievalMode] = useState<"search" | "full">("search");
   const [editChronologicalMode, setEditChronologicalMode] = useState<"on" | "off" | "auto">("off");
+  const [editRetrievalMode, setEditRetrievalMode] = useState<"search" | "full">("search");
   const [tab, setTab] = useState<Tab>("items");
   const [items, setItems] = useState<KBItem[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -167,6 +170,7 @@ export default function KnowledgeBasePage() {
     setSelectedKB(kb); setSearchResults(null); setSearchQuery(""); setEditingKB(false);
     setEditName(kb.name); setEditDesc(kb.description); setEditModel(kb.ingest_model ?? "");
     setEditChronologicalMode(kb.chronological_mode ?? "off");
+    setEditRetrievalMode(kb.retrieval_mode ?? "search");
     // Clear ingest state
     setIngestText(""); setIngestSource(""); setIngestUrl(""); setDeepResearch(false); setAiDeepResearch(false); setRfcAnalysis(true); setHfRepoId(""); setHfSubset(""); setHfMaxRows("500");
     // Stop any active polling and clear all ingest state
@@ -189,15 +193,15 @@ export default function KnowledgeBasePage() {
 
   const createKB = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/knowledge-bases", { name, description, ingest_model: ingestModel || null, chronological_mode: chronologicalMode });
-    setName(""); setDescription(""); setIngestModel(""); setChronologicalMode("off"); setShowCreate(false); loadKBs();
+    await api.post("/knowledge-bases", { name, description, ingest_model: ingestModel || null, chronological_mode: chronologicalMode, retrieval_mode: retrievalMode });
+    setName(""); setDescription(""); setIngestModel(""); setChronologicalMode("off"); setRetrievalMode("search"); setShowCreate(false); loadKBs();
   };
 
   const updateKB = async () => {
     if (!selectedKB) return;
-    await api.put(`/knowledge-bases/${selectedKB.id}`, { name: editName, description: editDesc, ingest_model: editModel || null, chronological_mode: editChronologicalMode });
+    await api.put(`/knowledge-bases/${selectedKB.id}`, { name: editName, description: editDesc, ingest_model: editModel || null, chronological_mode: editChronologicalMode, retrieval_mode: editRetrievalMode });
     setEditingKB(false); loadKBs();
-    setSelectedKB({ ...selectedKB, name: editName, description: editDesc, ingest_model: editModel || null, chronological_mode: editChronologicalMode });
+    setSelectedKB({ ...selectedKB, name: editName, description: editDesc, ingest_model: editModel || null, chronological_mode: editChronologicalMode, retrieval_mode: editRetrievalMode });
   };
 
   const deleteKB = async (id: string) => {
@@ -406,6 +410,18 @@ export default function KnowledgeBasePage() {
               {chronologicalMode === "auto" && <span className="text-xs text-matrix-text-faint">detects temporal queries</span>}
               {chronologicalMode === "on" && <span className="text-xs text-matrix-text-faint">always sort by timestamp</span>}
             </div>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-matrix-text-dim">Retrieval:</span>
+              <div className="flex rounded-lg overflow-hidden border border-matrix-border text-xs">
+                {(["search", "full"] as const).map((mode) => (
+                  <button key={mode} type="button" onClick={() => setRetrievalMode(mode)}
+                    className={`px-3 py-1.5 capitalize transition-colors ${retrievalMode === mode ? "bg-matrix-accent text-matrix-bg font-medium" : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text"}`}>
+                    {mode === "search" ? "Search" : "Full Context"}
+                  </button>
+                ))}
+              </div>
+              {retrievalMode === "full" && <span className="text-xs text-matrix-text-faint">injects entire KB as context — best for small KBs</span>}
+            </div>
             <div className="flex gap-2">
               <button type="submit" className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">Create</button>
               <button type="button" onClick={() => setShowCreate(false)} className="rounded-lg bg-matrix-input px-4 py-2 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Cancel</button>
@@ -459,6 +475,18 @@ export default function KnowledgeBasePage() {
                       {editChronologicalMode === "auto" && <span className="text-xs text-matrix-text-faint">detects temporal queries</span>}
                       {editChronologicalMode === "on" && <span className="text-xs text-matrix-text-faint">always sort by timestamp</span>}
                     </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-matrix-text-dim">Retrieval:</span>
+                      <div className="flex rounded-lg overflow-hidden border border-matrix-border text-xs">
+                        {(["search", "full"] as const).map((mode) => (
+                          <button key={mode} type="button" onClick={() => setEditRetrievalMode(mode)}
+                            className={`px-3 py-1.5 capitalize transition-colors ${editRetrievalMode === mode ? "bg-matrix-accent text-matrix-bg font-medium" : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text"}`}>
+                            {mode === "search" ? "Search" : "Full Context"}
+                          </button>
+                        ))}
+                      </div>
+                      {editRetrievalMode === "full" && <span className="text-xs text-matrix-text-faint">injects entire KB — best for small KBs</span>}
+                    </div>
                     <div className="flex gap-2">
                       <button onClick={updateKB} className="rounded-lg bg-matrix-accent px-3 py-1.5 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover transition-colors">Save</button>
                       <button onClick={() => setEditingKB(false)} className="rounded-lg bg-matrix-input px-3 py-1.5 text-sm text-matrix-text hover:bg-matrix-hover transition-colors">Cancel</button>
@@ -474,6 +502,11 @@ export default function KnowledgeBasePage() {
                         {selectedKB.chronological_mode !== "off" && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-matrix-accent/10 text-matrix-accent border border-matrix-accent/20">
                             chronological: {selectedKB.chronological_mode}
+                          </span>
+                        )}
+                        {selectedKB.retrieval_mode === "full" && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-matrix-green/10 text-matrix-green border border-matrix-green/20">
+                            full context
                           </span>
                         )}
                       </div>
