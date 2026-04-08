@@ -120,21 +120,38 @@ class LLMService:
         return provider_prefix in enabled_types
 
     async def resolve_model(
-        self, preferred: str | None, fallbacks: list[str] | None = None
+        self, preferred: str | None, fallbacks: list[str] | None = None,
+        task_type: str | None = None,
     ) -> str:
-        """Resolve a model through the fallback chain: preferred → fallbacks → system default."""
+        """Resolve a model through the fallback chain.
+
+        Resolution order:
+        1. Preferred model (user/agent override)
+        2. Router recommendation (if auto_routing_enabled and task_type provided)
+        3. Fallback models
+        4. System default
+        """
         enabled_types = await self._get_enabled_provider_types()
 
         # 1. Preferred model
         if preferred and await self._is_model_available(preferred, enabled_types):
             return preferred
 
-        # 2. Fallback models
+        # 2. Router recommendation
+        if task_type:
+            settings = await self.settings_repo.get()
+            if getattr(settings, "auto_routing_enabled", True):
+                recommendations = getattr(settings, "model_recommendations", None) or {}
+                rec = recommendations.get(task_type)
+                if rec and await self._is_model_available(rec, enabled_types):
+                    return rec
+
+        # 3. Fallback models
         for fb in fallbacks or []:
             if await self._is_model_available(fb, enabled_types):
                 return fb
 
-        # 3. System default
+        # 4. System default
         settings = await self.settings_repo.get()
         if settings.default_model and await self._is_model_available(
             settings.default_model, enabled_types

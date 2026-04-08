@@ -252,7 +252,7 @@ async def _generate_changes_analysis(
         return None
 
     try:
-        model = await llm_service.resolve_model(None)
+        model = await llm_service.resolve_model(None, task_type="analysis")
         kwargs = await llm_service._get_model_kwargs(model)
 
         sections = [f"# Changes Analysis for RFC {rfc_num}: {title}\n"]

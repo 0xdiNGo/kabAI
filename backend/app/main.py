@@ -58,6 +58,14 @@ async def lifespan(app: FastAPI):
     vector_service = VectorService(qdrant_conn.client, llm_service, settings_repo_inst)
     app.state.vector_service = vector_service
 
+    # Run initial model router evaluation
+    from app.services.model_router import ModelRouter
+    model_router = ModelRouter(provider_service, settings_repo_inst, usage_repo)
+    try:
+        await model_router.save_recommendations()
+    except Exception:
+        pass  # Non-critical — may fail if no providers configured yet
+
     worker = IngestWorker(queue_repo, knowledge_repo, llm_service, vector_service)
     app.state.ingest_worker = worker
     app.state.ingest_queue_repo = queue_repo

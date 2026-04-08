@@ -158,7 +158,7 @@ class KnowledgeService:
                 pass
 
         # 3. System default model
-        return await self.llm_service.resolve_model(None)
+        return await self.llm_service.resolve_model(None, task_type="title")
 
     # --- Ingestion ---
 
@@ -637,7 +637,7 @@ class KnowledgeService:
         """Generate a title and return (title, tokens_used)."""
         try:
             if not model:
-                model = await self.llm_service.resolve_model(None)
+                model = await self.llm_service.resolve_model(None, task_type="title")
             kwargs = await self.llm_service._get_model_kwargs(model)
             response = await litellm.acompletion(
                 model=model,

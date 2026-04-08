@@ -94,7 +94,8 @@ class KabAInetService:
                     })
 
                     model = await self.llm_service.resolve_model(
-                        agent.preferred_model, agent.fallback_models
+                        agent.preferred_model, agent.fallback_models,
+                        task_type="chat",
                     )
 
                     # Filter to this agent's KBs/exemplars from pre-fetched results

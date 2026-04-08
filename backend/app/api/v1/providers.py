@@ -1,9 +1,26 @@
-from fastapi import APIRouter, Depends
+import asyncio
+
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from app.dependencies import get_current_user, get_provider_service, require_admin
+from app.dependencies import get_current_user, get_provider_service, get_settings_repo, get_usage_repo, require_admin
 from app.schemas.provider import ModelInfo, ProviderCreate, ProviderResponse, ProviderUpdate
 from app.services.provider_service import ProviderService
+
+
+async def _trigger_model_evaluation(svc: ProviderService) -> None:
+    """Fire-and-forget model router re-evaluation after provider changes."""
+    try:
+        from app.repositories.settings_repo import SettingsRepository
+        from app.repositories.usage_repo import UsageRepository
+        from app.core.database import db
+        from app.services.model_router import ModelRouter
+        settings_repo = SettingsRepository(db.db)
+        usage_repo = UsageRepository(db.db)
+        router = ModelRouter(svc, settings_repo, usage_repo)
+        await router.save_recommendations()
+    except Exception:
+        pass  # Non-critical
 
 
 class OllamaModelCreateRequest(BaseModel):
@@ -52,6 +69,7 @@ async def create_provider(
         api_base=body.api_base,
         api_key=body.api_key,
     )
+    asyncio.create_task(_trigger_model_evaluation(svc))
     return {"id": provider_id}
 
 
@@ -64,6 +82,7 @@ async def update_provider(
 ):
     updates = body.model_dump(exclude_none=True)
     await svc.update_provider(provider_id, updates)
+    asyncio.create_task(_trigger_model_evaluation(svc))
     return {"message": "Provider updated"}
 
 
@@ -74,6 +93,7 @@ async def delete_provider(
     svc: ProviderService = Depends(get_provider_service),
 ):
     await svc.delete_provider(provider_id)
+    asyncio.create_task(_trigger_model_evaluation(svc))
     return {"message": "Provider deleted"}
 
 

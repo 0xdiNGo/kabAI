@@ -16,4 +16,7 @@ class SystemSettings(BaseModel):
     embedding_model: str | None = None
     kagi_summarizer_enabled: bool = False
     kagi_summarizer_engine: str = "cecil"  # cecil | agnes | muriel
+    auto_routing_enabled: bool = True  # enable model router auto-assignment
+    model_recommendations: dict | None = None  # task_type -> model_id mapping from router
+    model_scores: list | None = None  # scored model data from last evaluation
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

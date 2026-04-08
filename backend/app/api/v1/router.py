@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import agents, auth, conversations, exemplars, huggingface, knowledge, providers, search, settings, usage
+from app.api.v1 import agents, auth, conversations, exemplars, huggingface, knowledge, model_routing, providers, search, settings, usage
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth.router)
@@ -13,3 +13,4 @@ router.include_router(exemplars.router)
 router.include_router(search.router)
 router.include_router(huggingface.router)
 router.include_router(usage.router)
+router.include_router(model_routing.router)

@@ -133,6 +133,7 @@ class ConversationService:
         model = await self.llm_service.resolve_model(
             agent.preferred_model if agent else convo.model,
             agent.fallback_models if agent else None,
+            task_type="chat",
         )
 
         # Build message history — last 30 messages for LLM context window
@@ -190,6 +191,7 @@ class ConversationService:
         model = await self.llm_service.resolve_model(
             agent.preferred_model if agent else convo.model,
             agent.fallback_models if agent else None,
+            task_type="chat",
         )
 
         # Build message history — last 30 messages for LLM context window

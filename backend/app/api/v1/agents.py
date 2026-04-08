@@ -297,7 +297,7 @@ async def build_agent(
 ):
     """Use AI to generate an agent profile from a description."""
     try:
-        model = await llm_service.resolve_model(None)
+        model = await llm_service.resolve_model(None, task_type="chat")
     except Exception:
         return {"error": "No default model configured. Set a system default model in Settings."}
     kwargs = await llm_service._get_model_kwargs(model)

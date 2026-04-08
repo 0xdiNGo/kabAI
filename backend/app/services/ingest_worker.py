@@ -263,7 +263,7 @@ class IngestWorker:
                     break
 
             # Resolve model — use system default
-            model = await self.llm_service.resolve_model(None, None)
+            model = await self.llm_service.resolve_model(None, None, task_type="digest")
 
             # Generate digest via LLM
             prompt = DIGEST_PROMPT.format(content=combined)
