@@ -99,7 +99,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
 
   return (
     <aside
-      className="flex flex-col border-r border-matrix-border bg-matrix-card shrink-0 transition-all duration-200"
+      className="flex flex-col border-r border-matrix-border bg-matrix-card shrink-0 transition-all duration-200 glass-sidebar"
       style={{ width: collapsed ? 56 : 240 }}
     >
       {/* Logo */}

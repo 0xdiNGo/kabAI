@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useThemeStore } from "@/stores/themeStore";
 
 export default function LoginPage() {
+  const applyTheme = useThemeStore((s) => s.apply);
+  useEffect(() => { applyTheme(); }, [applyTheme]);
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");

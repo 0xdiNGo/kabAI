@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Default theme variables (Gruvbox Dark) ──────────────────────── */
+:root {
+  --theme-bg: #1d2021;
+  --theme-surface: #282828;
+  --theme-card: #3c3836;
+  --theme-input: #504945;
+  --theme-border: #665c54;
+  --theme-hover: #504945;
+  --theme-text: #ebdbb2;
+  --theme-text-bright: #fbf1c7;
+  --theme-text-dim: #a89984;
+  --theme-text-faint: #7c6f64;
+  --theme-accent: #fe8019;
+  --theme-accent-hover: #d65d0e;
+  --theme-green: #b8bb26;
+  --theme-green-dim: #98971a;
+  --theme-purple: #d3869b;
+  --theme-purple-dim: #b16286;
+  --theme-red: #fb4934;
+  --theme-amber: #fabd2f;
+  --theme-aqua: #8ec07c;
+  --theme-blue: #83a598;
+  --theme-yellow: #fabd2f;
+  --theme-glass-blur: 0px;
+  --theme-glass-sidebar-bg: #282828;
+  --theme-glass-sidebar-blur: 0px;
+}
+
 body {
   @apply bg-matrix-bg text-matrix-text;
 }
@@ -10,19 +38,19 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #1d2021;
+  background: var(--theme-bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #504945;
+  background: var(--theme-input);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #665c54;
+  background: var(--theme-border);
 }
 
 ::selection {
   background: rgba(254, 128, 25, 0.25);
-  color: #fbf1c7;
+  color: var(--theme-text-bright);
 }
 
 @keyframes slide-in-right {
@@ -31,4 +59,16 @@ body {
 }
 .animate-in.slide-in-from-right {
   animation: slide-in-right 0.2s ease-out;
+}
+
+/* ── Glass mode ──────────────────────────────────────────────────── */
+.glass-card {
+  backdrop-filter: blur(var(--theme-glass-blur));
+  -webkit-backdrop-filter: blur(var(--theme-glass-blur));
+}
+
+.glass-sidebar {
+  background-color: var(--theme-glass-sidebar-bg) !important;
+  backdrop-filter: blur(var(--theme-glass-sidebar-blur));
+  -webkit-backdrop-filter: blur(var(--theme-glass-sidebar-blur));
 }

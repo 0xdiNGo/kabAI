@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { ModelInfo, Provider } from "@/types/provider";
+import { useThemeStore } from "@/stores/themeStore";
+import { baseThemes, accents } from "@/lib/themes";
 
 interface ModelRouterScore {
   model_id: string;
@@ -59,6 +61,133 @@ const emptyForm: ProviderForm = {
   api_base: "",
   api_key: "",
 };
+
+function AppearanceSection() {
+  const themeId = useThemeStore((s) => s.themeId);
+  const accentId = useThemeStore((s) => s.accentId);
+  const glass = useThemeStore((s) => s.glass);
+  const background = useThemeStore((s) => s.background);
+  const rainBaseSpeed = useThemeStore((s) => s.rainBaseSpeed);
+  const setThemeId = useThemeStore((s) => s.setThemeId);
+  const setAccentId = useThemeStore((s) => s.setAccentId);
+  const setGlass = useThemeStore((s) => s.setGlass);
+  const setBackground = useThemeStore((s) => s.setBackground);
+  const setRainBaseSpeed = useThemeStore((s) => s.setRainBaseSpeed);
+
+  return (
+    <div className="mb-6 rounded-xl bg-matrix-card p-5">
+      <h2 className="font-semibold mb-1">Appearance</h2>
+      <p className="text-xs text-matrix-text-faint mb-4">Theme and visual effects</p>
+
+      {/* Base theme selector */}
+      <div className="mb-4">
+        <span className="text-sm text-matrix-text-dim block mb-2">Theme</span>
+        <div className="flex flex-wrap gap-2">
+          {baseThemes.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setThemeId(t.id)}
+              className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
+                themeId === t.id
+                  ? "ring-2 ring-matrix-accent bg-matrix-input text-matrix-text-bright"
+                  : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text hover:bg-matrix-hover"
+              }`}
+            >
+              <span
+                className="inline-block w-3 h-3 rounded-full mr-1.5 align-middle border border-matrix-border"
+                style={{ backgroundColor: t.colors.bg }}
+              />
+              {t.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Accent color selector */}
+      <div className="mb-4">
+        <span className="text-sm text-matrix-text-dim block mb-2">Accent Color</span>
+        <div className="flex flex-wrap gap-2">
+          {accents.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setAccentId(a.id)}
+              className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
+                accentId === a.id
+                  ? "ring-2 ring-matrix-accent bg-matrix-input text-matrix-text-bright"
+                  : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text hover:bg-matrix-hover"
+              }`}
+            >
+              <span
+                className="inline-block w-3 h-3 rounded-full mr-1.5 align-middle border border-matrix-border"
+                style={{ backgroundColor: a.color }}
+              />
+              {a.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Glass toggle */}
+      <div className="pt-3 border-t border-matrix-border">
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <div className="relative">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={glass}
+              onChange={(e) => setGlass(e.target.checked)}
+            />
+            <div className="w-10 h-6 rounded-full bg-matrix-input peer-checked:bg-matrix-accent transition-colors" />
+            <div className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-4" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Glass Mode</p>
+            <p className="text-xs text-matrix-text-faint">Semi-transparent panels with blur effect. Works with any theme.</p>
+          </div>
+        </label>
+      </div>
+
+      {/* Background */}
+      <div className="pt-3 mt-3 border-t border-matrix-border">
+        <span className="text-sm text-matrix-text-dim block mb-2">Background</span>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {[
+            { id: "none", label: "None" },
+            { id: "matrix-rain", label: "Matrix Rain" },
+          ].map((bg) => (
+            <button
+              key={bg.id}
+              onClick={() => setBackground(bg.id)}
+              className={`rounded-lg px-3 py-1.5 text-xs transition-colors ${
+                background === bg.id
+                  ? "ring-2 ring-matrix-accent bg-matrix-input text-matrix-text-bright"
+                  : "bg-matrix-input text-matrix-text-dim hover:text-matrix-text hover:bg-matrix-hover"
+              }`}
+            >
+              {bg.label}
+            </button>
+          ))}
+        </div>
+
+        {background === "matrix-rain" && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-matrix-text-dim shrink-0">Speed:</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(rainBaseSpeed * 100)}
+              onChange={(e) => setRainBaseSpeed(Number(e.target.value) / 100)}
+              className="flex-1 h-1.5 rounded-full appearance-none bg-matrix-input accent-matrix-accent"
+            />
+            <span className="text-xs text-matrix-text-faint w-8 text-right">{Math.round(rainBaseSpeed * 100)}%</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 export default function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -550,6 +679,9 @@ export default function ProvidersPage() {
           )}
         </div>
       </div>
+
+      {/* Appearance */}
+      <AppearanceSection />
 
       {/* Model Router */}
       {(() => {
