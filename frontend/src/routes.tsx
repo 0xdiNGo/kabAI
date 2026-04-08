@@ -7,6 +7,8 @@ import AgentsPage from "@/pages/AgentsPage";
 import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
 import ExemplarSetPage from "@/pages/ExemplarSetPage";
 import SearchProvidersPage from "@/pages/SearchProvidersPage";
+import ChatsPage from "@/pages/ChatsPage";
+import UsagePage from "@/pages/UsagePage";
 import AppLayout from "@/components/layout/AppLayout";
 import CommandPalette from "@/components/CommandPalette";
 
@@ -22,7 +24,9 @@ export default function AppRoutes() {
           <Route path="/knowledge-bases" element={<KnowledgeBasePage />} />
           <Route path="/exemplar-sets" element={<ExemplarSetPage />} />
           <Route path="/search-providers" element={<SearchProvidersPage />} />
+          <Route path="/chats" element={<ChatsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/usage" element={<UsagePage />} />
           <Route path="/chat/:conversationId" element={<ChatPage />} />
         </Route>
       </Routes>

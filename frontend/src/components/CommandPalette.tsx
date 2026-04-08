@@ -46,6 +46,7 @@ export default function CommandPalette() {
       { id: "nav-agents", label: "Agents", category: "Navigate", action: () => navigate("/agents/manage") },
       { id: "nav-kb", label: "Knowledge Bases", category: "Navigate", action: () => navigate("/knowledge-bases") },
       { id: "nav-ex", label: "Exemplar Sets", category: "Navigate", action: () => navigate("/exemplar-sets") },
+      { id: "nav-usage", label: "Usage & Costs", category: "Navigate", action: () => navigate("/usage") },
       { id: "nav-search", label: "Search Providers", category: "Navigate", action: () => navigate("/search-providers") },
       { id: "nav-settings", label: "Settings", category: "Navigate", action: () => navigate("/providers") },
       { id: "act-logout", label: "Logout", category: "Actions", action: () => { logout(); navigate("/login"); } },
