@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [availableSP, setAvailableSP] = useState<{ id: string; display_name: string }[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [routerChatModel, setRouterChatModel] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [hfEnabled, setHfEnabled] = useState(false);
   const [kabAInetMode, setKabAInetMode] = useState(false);
@@ -68,6 +69,9 @@ export default function DashboardPage() {
     loadAgents();
     loadConversations();
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
+    api.get<{ recommendations: Record<string, string> }>("/model-router/recommendations")
+      .then((r) => { const chat = r.recommendations?.chat; if (chat) setRouterChatModel(chat.split("/").pop() ?? chat); })
+      .catch(() => {});
     api.get<{ id: string; name: string }[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
     api.get<{ id: string; name: string }[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
     api.get<{ id: string; display_name: string }[]>("/search-providers").then(setAvailableSP).catch(() => {});
@@ -359,7 +363,7 @@ export default function DashboardPage() {
                         <label className="block text-xs text-matrix-text-faint mb-1">Preferred Model<HelpTip text="Which LLM powers this agent. Falls back to system default." /></label>
                         <select value={editForm.preferred_model} onChange={(e) => setEditForm({ ...editForm, preferred_model: e.target.value })}
                           className="w-full rounded-lg bg-matrix-input px-3 py-1.5 text-xs text-matrix-text-bright outline-none">
-                          <option value="">System default</option>
+                          <option value="">{routerChatModel ? `Auto — ${routerChatModel} (router)` : "System default"}</option>
                           {models.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.provider_display_name})</option>))}
                         </select>
                       </div>

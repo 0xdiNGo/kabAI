@@ -74,6 +74,7 @@ function autoSlug(name: string): string {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [routerChatModel, setRouterChatModel] = useState<string | null>(null);
   const [availableKBs, setAvailableKBs] = useState<KB[]>([]);
   const [availableES, setAvailableES] = useState<ES[]>([]);
   const [availableSP, setAvailableSP] = useState<SP[]>([]);
@@ -108,6 +109,9 @@ export default function AgentsPage() {
   useEffect(() => {
     loadAgents();
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
+    api.get<{ recommendations: Record<string, string> }>("/model-router/recommendations")
+      .then((r) => { const chat = r.recommendations?.chat; if (chat) setRouterChatModel(chat.split("/").pop() ?? chat); })
+      .catch(() => {});
     api.get<KB[]>("/knowledge-bases").then(setAvailableKBs).catch(() => {});
     api.get<ES[]>("/exemplar-sets").then(setAvailableES).catch(() => {});
     api.get<SP[]>("/search-providers").then(setAvailableSP).catch(() => {});
@@ -538,7 +542,7 @@ export default function AgentsPage() {
                   onChange={(e) => setForm({ ...form, preferred_model: e.target.value })}
                   className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent"
                 >
-                  <option value="">Use system default</option>
+                  <option value="">{routerChatModel ? `Auto — ${routerChatModel} (router)` : "Use system default"}</option>
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name} ({m.provider_display_name})
@@ -804,7 +808,7 @@ export default function AgentsPage() {
                         </div>
                       )}
                       <div className="mt-2 flex flex-wrap gap-x-4 text-sm text-matrix-text-faint">
-                        <span>Model: {agent.preferred_model ?? "System default"}</span>
+                        <span>Model: {agent.preferred_model ?? (routerChatModel ? `Auto (${routerChatModel})` : "System default")}</span>
                         <span>Slug: {agent.slug}</span>
                       </div>
                       {agent.specializations.length > 0 && (
@@ -877,7 +881,7 @@ export default function AgentsPage() {
                         <label className="mb-1 block text-sm text-matrix-text-dim">Preferred Model</label>
                         <select value={form.preferred_model} onChange={(e) => setForm({ ...form, preferred_model: e.target.value })}
                           className="w-full rounded-lg bg-matrix-input px-4 py-2.5 text-matrix-text-bright outline-none focus:ring-2 focus:ring-matrix-accent">
-                          <option value="">Use system default</option>
+                          <option value="">{routerChatModel ? `Auto — ${routerChatModel} (router)` : "Use system default"}</option>
                           {models.map((m) => (<option key={m.id} value={m.id}>{m.name} ({m.provider_display_name})</option>))}
                         </select>
                       </div>

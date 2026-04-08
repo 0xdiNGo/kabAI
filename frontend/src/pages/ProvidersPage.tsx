@@ -2,6 +2,25 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { ModelInfo, Provider } from "@/types/provider";
 
+interface ModelRouterScore {
+  model_id: string;
+  provider: string;
+  tier: number;
+  cost_per_1k_input: number;
+  cost_per_1k_output: number;
+  avg_latency_ms: number;
+  context_window: number;
+  total_requests: number;
+  efficiency_score: number;
+}
+
+interface ModelRouterData {
+  auto_routing_enabled: boolean;
+  recommendations: Record<string, string>;
+  scores: ModelRouterScore[];
+  models_evaluated?: number;
+}
+
 interface ProviderForm {
   name: string;
   display_name: string;
@@ -73,12 +92,19 @@ export default function ProvidersPage() {
   const [testResults, setTestResults] = useState<Record<string, { status: string; detail?: string }>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [modelRouter, setModelRouter] = useState<ModelRouterData | null>(null);
+  const [routerEvaluating, setRouterEvaluating] = useState(false);
+  const [routerScoresExpanded, setRouterScoresExpanded] = useState(false);
   const loadProviders = () => {
     api.get<Provider[]>("/providers").then(setProviders).catch(() => {});
   };
 
   const loadModels = () => {
     api.get<ModelInfo[]>("/providers/models/all").then(setModels).catch(() => {});
+  };
+
+  const loadModelRouter = () => {
+    api.get<ModelRouterData>("/model-router/recommendations").then(setModelRouter).catch(() => {});
   };
 
   const loadSettings = () => {
@@ -115,6 +141,7 @@ export default function ProvidersPage() {
     loadProviders();
     loadModels();
     loadSettings();
+    loadModelRouter();
   }, []);
 
   const saveDefaultModel = async () => {
@@ -523,6 +550,186 @@ export default function ProvidersPage() {
           )}
         </div>
       </div>
+
+      {/* Model Router */}
+      {(() => {
+        const TASK_LABELS: Record<string, string> = {
+          title: "Title Generation",
+          chat: "Agent Chat",
+          digest: "KB Digest",
+          embedding: "Embeddings",
+          summarize: "Summarization",
+          search: "Search Routing",
+          classify: "Classification",
+          analysis: "Deep Analysis",
+        };
+
+        const TIER_LABELS: Record<number, { label: string; className: string }> = {
+          0: { label: "embed", className: "bg-matrix-input text-matrix-text-faint" },
+          1: { label: "basic", className: "bg-blue-900/40 text-blue-300" },
+          2: { label: "balanced", className: "bg-yellow-900/40 text-yellow-300" },
+          3: { label: "premium", className: "bg-purple-900/40 text-purple-300" },
+        };
+
+        const formatCost = (cost: number) =>
+          cost === 0 ? "Free" : `$${cost.toFixed(4)}`;
+
+        const shortModel = (modelId: string) => {
+          const parts = modelId.split("/");
+          return parts[parts.length - 1];
+        };
+
+        const TierBadge = ({ tier }: { tier: number }) => {
+          const info = TIER_LABELS[tier] ?? { label: `tier${tier}`, className: "bg-matrix-input text-matrix-text-faint" };
+          return (
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${info.className}`}>
+              {info.label}
+            </span>
+          );
+        };
+
+        const scoreForModel = (modelId: string): ModelRouterScore | undefined =>
+          modelRouter?.scores.find((s) => s.model_id === modelId);
+
+        return (
+          <div className="mb-6 rounded-xl bg-matrix-card p-5">
+            <div className="flex items-start justify-between mb-1">
+              <h2 className="font-semibold">Model Router</h2>
+              <button
+                onClick={async () => {
+                  setRouterEvaluating(true);
+                  try {
+                    const result = await api.post<ModelRouterData>("/model-router/evaluate");
+                    setModelRouter(result);
+                  } finally {
+                    setRouterEvaluating(false);
+                  }
+                }}
+                disabled={routerEvaluating}
+                className="rounded-lg bg-matrix-accent px-4 py-2 text-sm font-medium text-matrix-bg hover:bg-matrix-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {routerEvaluating ? "Evaluating..." : "Re-evaluate"}
+              </button>
+            </div>
+            <p className="text-xs text-matrix-text-faint mb-4">
+              Automatically assign the best available model to each task based on tier, cost, and latency.
+            </p>
+
+            {/* Auto-routing toggle */}
+            <label className="flex items-center gap-3 cursor-pointer mb-4">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={modelRouter?.auto_routing_enabled ?? false}
+                  onChange={async () => {
+                    const result = await api.put<ModelRouterData>("/model-router/toggle");
+                    setModelRouter(result);
+                  }}
+                />
+                <div className="w-10 h-5 rounded-full bg-matrix-input peer-checked:bg-matrix-accent transition-colors" />
+                <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-matrix-text-faint peer-checked:bg-matrix-bg peer-checked:translate-x-5 transition-all" />
+              </div>
+              <span className="text-sm text-matrix-text">
+                Auto-routing {modelRouter?.auto_routing_enabled ? "enabled" : "disabled"}
+              </span>
+            </label>
+
+            {/* Task Assignments Table */}
+            {modelRouter && Object.keys(modelRouter.recommendations).length > 0 && (
+              <div className="mb-4">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-matrix-text-faint border-b border-matrix-border">
+                      <th className="pb-2 text-left font-medium">Task</th>
+                      <th className="pb-2 text-left font-medium">Tier</th>
+                      <th className="pb-2 text-left font-medium">Assigned Model</th>
+                      <th className="pb-2 text-left font-medium">Provider</th>
+                      <th className="pb-2 text-left font-medium">Cost/1k</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(modelRouter.recommendations).map(([task, modelId]) => {
+                      const score = scoreForModel(modelId);
+                      const label = TASK_LABELS[task] ?? task;
+                      const provider = modelId.split("/")[0] ?? "";
+                      return (
+                        <tr key={task} className="border-b border-matrix-border last:border-0">
+                          <td className="py-2 text-matrix-text">{label}</td>
+                          <td className="py-2">
+                            {score ? <TierBadge tier={score.tier} /> : <span className="text-matrix-text-faint">—</span>}
+                          </td>
+                          <td className="py-2 text-matrix-text-bright font-mono">{shortModel(modelId)}</td>
+                          <td className="py-2 text-matrix-text-dim">{provider}</td>
+                          <td className="py-2 text-matrix-text-dim">
+                            {score
+                              ? score.cost_per_1k_input === 0 && score.cost_per_1k_output === 0
+                                ? "Free"
+                                : `${formatCost(score.cost_per_1k_input)} / ${formatCost(score.cost_per_1k_output)}`
+                              : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Collapsible All Scored Models */}
+            {modelRouter && modelRouter.scores.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setRouterScoresExpanded((v) => !v)}
+                  className="text-xs text-matrix-text-dim hover:text-matrix-text-bright transition-colors"
+                >
+                  {routerScoresExpanded ? "▾ Hide scored models" : "▸ Show all scored models"}
+                </button>
+                {routerScoresExpanded && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-matrix-text-faint border-b border-matrix-border">
+                          <th className="pb-2 text-left font-medium">Model</th>
+                          <th className="pb-2 text-left font-medium">Provider</th>
+                          <th className="pb-2 text-left font-medium">Tier</th>
+                          <th className="pb-2 text-left font-medium">Input Cost</th>
+                          <th className="pb-2 text-left font-medium">Output Cost</th>
+                          <th className="pb-2 text-left font-medium">Avg Latency</th>
+                          <th className="pb-2 text-left font-medium">Context</th>
+                          <th className="pb-2 text-left font-medium">Requests</th>
+                          <th className="pb-2 text-left font-medium">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...modelRouter.scores]
+                          .sort((a, b) => b.efficiency_score - a.efficiency_score)
+                          .map((s) => (
+                            <tr key={s.model_id} className="border-b border-matrix-border last:border-0">
+                              <td className="py-2 text-matrix-text-bright font-mono whitespace-nowrap">{shortModel(s.model_id)}</td>
+                              <td className="py-2 text-matrix-text-dim">{s.provider}</td>
+                              <td className="py-2"><TierBadge tier={s.tier} /></td>
+                              <td className="py-2 text-matrix-text-dim">{formatCost(s.cost_per_1k_input)}</td>
+                              <td className="py-2 text-matrix-text-dim">{formatCost(s.cost_per_1k_output)}</td>
+                              <td className="py-2 text-matrix-text-dim">{s.avg_latency_ms > 0 ? `${s.avg_latency_ms}ms` : "—"}</td>
+                              <td className="py-2 text-matrix-text-dim">{s.context_window > 0 ? s.context_window.toLocaleString() : "—"}</td>
+                              <td className="py-2 text-matrix-text-dim">{s.total_requests}</td>
+                              <td className="py-2 text-matrix-text">{s.efficiency_score.toFixed(3)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!modelRouter && (
+              <p className="text-xs text-matrix-text-faint">Loading model router data...</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Add Provider Form */}
       {showForm && (
