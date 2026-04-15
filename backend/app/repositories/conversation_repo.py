@@ -23,11 +23,15 @@ class ConversationRepository:
         return None
 
     async def find_by_user(
-        self, user_id: str, limit: int = 50, offset: int = 0
+        self, user_id: str, limit: int = 50, offset: int = 0,
+        source: str | None = None,
     ) -> list[Conversation]:
+        query: dict = {"user_id": user_id}
+        if source:
+            query["source"] = source
         conversations = []
         cursor = (
-            self.collection.find({"user_id": user_id})
+            self.collection.find(query)
             .sort("updated_at", -1)
             .skip(offset)
             .limit(limit)
@@ -36,6 +40,63 @@ class ConversationRepository:
             doc["_id"] = str(doc["_id"])
             conversations.append(Conversation(**doc))
         return conversations
+
+    async def find_by_external_id(
+        self, connector_id: str, external_id: str,
+    ) -> Conversation | None:
+        doc = await self.collection.find_one({
+            "connector_id": connector_id,
+            "external_id": external_id,
+        })
+        if doc:
+            doc["_id"] = str(doc["_id"])
+            return Conversation(**doc)
+        return None
+
+    async def find_by_connector(
+        self, connector_id: str, active_only: bool = False,
+        limit: int = 50, offset: int = 0,
+    ) -> list[Conversation]:
+        query: dict = {"connector_id": connector_id}
+        if active_only:
+            query["is_taken_over"] = False
+        conversations = []
+        cursor = (
+            self.collection.find(query)
+            .sort("updated_at", -1)
+            .skip(offset)
+            .limit(limit)
+        )
+        async for doc in cursor:
+            doc["_id"] = str(doc["_id"])
+            conversations.append(Conversation(**doc))
+        return conversations
+
+    async def set_takeover(
+        self, conversation_id: str, is_taken_over: bool,
+        takeover_user_id: str | None = None,
+    ) -> bool:
+        result = await self.collection.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$set": {
+                "is_taken_over": is_taken_over,
+                "takeover_user_id": takeover_user_id,
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
+        return result.modified_count > 0
+
+    async def update_participants(
+        self, conversation_id: str, participants: list[str],
+    ) -> bool:
+        result = await self.collection.update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$set": {
+                "participants": participants,
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
+        return result.modified_count > 0
 
     async def add_message(self, conversation_id: str, message: Message) -> bool:
         updates: dict = {"updated_at": datetime.now(timezone.utc)}

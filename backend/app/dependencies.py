@@ -5,6 +5,7 @@ from app.core.exceptions import AuthenticationError, AuthorizationError
 from app.core.redis import redis_client
 from app.core.security import decode_token
 from app.repositories.agent_repo import AgentRepository
+from app.repositories.connector_repo import ConnectorRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.repositories.exemplar_repo import ExemplarRepository
 from app.repositories.ingest_queue_repo import IngestQueueRepository
@@ -12,12 +13,14 @@ from app.repositories.knowledge_repo import KnowledgeRepository
 from app.repositories.search_provider_repo import SearchProviderRepository
 from app.repositories.provider_repo import ProviderRepository
 from app.repositories.settings_repo import SettingsRepository
+from app.repositories.prompt_guard_repo import PromptGuardRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.services.auth_service import AuthService
 from app.services.conversation_service import ConversationService
 from app.services.exemplar_service import ExemplarService
 from app.services.huggingface_service import HuggingFaceService
+from app.services.prompt_guard_service import PromptGuardService
 from app.services.vector_service import VectorService
 from app.services.search_service import SearchService
 from app.services.knowledge_service import KnowledgeService
@@ -47,6 +50,10 @@ def get_agent_repo(database=Depends(get_db)):
     return AgentRepository(database)
 
 
+def get_connector_repo(database=Depends(get_db)):
+    return ConnectorRepository(database)
+
+
 def get_conversation_repo(database=Depends(get_db)):
     return ConversationRepository(database)
 
@@ -73,6 +80,10 @@ def get_search_provider_repo(database=Depends(get_db)):
 
 def get_usage_repo(database=Depends(get_db)):
     return UsageRepository(database)
+
+
+def get_prompt_guard_repo(database=Depends(get_db)):
+    return PromptGuardRepository(database)
 
 
 def get_search_service(
@@ -121,6 +132,14 @@ def get_llm_service(
     return svc
 
 
+def get_prompt_guard_service(
+    settings_repo: SettingsRepository = Depends(get_settings_repo),
+    guard_repo: PromptGuardRepository = Depends(get_prompt_guard_repo),
+    llm_service: LLMService = Depends(get_llm_service),
+):
+    return PromptGuardService(settings_repo, log_repo=guard_repo, llm_service=llm_service)
+
+
 def get_vector_service(
     settings_repo: SettingsRepository = Depends(get_settings_repo),
     llm_service: LLMService = Depends(get_llm_service),
@@ -160,8 +179,13 @@ def get_conversation_service(
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
     exemplar_service: ExemplarService = Depends(get_exemplar_service),
     search_service: SearchService = Depends(get_search_service),
+    prompt_guard: PromptGuardService = Depends(get_prompt_guard_service),
 ):
-    return ConversationService(conversation_repo, agent_repo, llm_service, knowledge_service, exemplar_service, search_service)
+    return ConversationService(
+        conversation_repo, agent_repo, llm_service,
+        knowledge_service, exemplar_service, search_service,
+        prompt_guard=prompt_guard,
+    )
 
 
 def get_kabainet_service(
@@ -171,8 +195,13 @@ def get_kabainet_service(
     settings_repo: SettingsRepository = Depends(get_settings_repo),
     knowledge_service: KnowledgeService = Depends(get_knowledge_service),
     exemplar_service: ExemplarService = Depends(get_exemplar_service),
+    prompt_guard: PromptGuardService = Depends(get_prompt_guard_service),
 ):
-    return KabAInetService(conversation_repo, agent_repo, llm_service, settings_repo, knowledge_service, exemplar_service)
+    return KabAInetService(
+        conversation_repo, agent_repo, llm_service,
+        settings_repo, knowledge_service, exemplar_service,
+        prompt_guard=prompt_guard,
+    )
 
 
 # Auth dependencies

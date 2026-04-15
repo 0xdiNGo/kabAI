@@ -1,12 +1,13 @@
 from fastapi import APIRouter
 
-from app.api.v1 import agents, auth, conversations, exemplars, huggingface, knowledge, model_routing, providers, search, settings, usage
+from app.api.v1 import agents, auth, connectors, conversations, exemplars, huggingface, knowledge, model_routing, prompt_guard, providers, search, settings, usage
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(auth.router)
 router.include_router(providers.router)
 router.include_router(agents.router)
 router.include_router(conversations.router)
+router.include_router(connectors.router)
 router.include_router(settings.router)
 router.include_router(knowledge.router)
 router.include_router(exemplars.router)
@@ -14,3 +15,4 @@ router.include_router(search.router)
 router.include_router(huggingface.router)
 router.include_router(usage.router)
 router.include_router(model_routing.router)
+router.include_router(prompt_guard.router)

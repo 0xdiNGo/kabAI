@@ -4,6 +4,7 @@ export interface Message {
   content: string;
   agent_id: string | null;
   agent_name: string | null;
+  sender_name?: string | null;
   model_used: string | null;
   created_at: string;
 }
@@ -19,6 +20,10 @@ export interface Conversation {
   message_count: number;
   summary: string | null;
   last_agent_name: string | null;
+  source?: string;
+  connector_id?: string | null;
+  channel?: string | null;
+  is_taken_over?: boolean;
   created_at: string;
   updated_at: string;
 }

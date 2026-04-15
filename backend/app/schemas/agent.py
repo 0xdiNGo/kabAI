@@ -18,6 +18,10 @@ class AgentCreate(BaseModel):
     search_provider_ids: list[str] = []
     collaboration_capable: bool = False
     collaboration_role: str | None = None
+    prompt_guard_sensitivity: str | None = None
+    prompt_guard_action: str | None = None
+    prompt_guard_custom_patterns: list[dict] = []
+    prompt_guard_allow_llm_classification: bool = False
 
 
 class AgentUpdate(BaseModel):
@@ -37,6 +41,10 @@ class AgentUpdate(BaseModel):
     collaboration_capable: bool | None = None
     collaboration_role: str | None = None
     is_active: bool | None = None
+    prompt_guard_sensitivity: str | None = None
+    prompt_guard_action: str | None = None
+    prompt_guard_custom_patterns: list[dict] | None = None
+    prompt_guard_allow_llm_classification: bool | None = None
 
 
 class AgentResponse(BaseModel):
@@ -54,6 +62,8 @@ class AgentResponse(BaseModel):
     collaboration_capable: bool
     collaboration_role: str | None
     is_active: bool
+    prompt_guard_sensitivity: str | None = None
+    prompt_guard_action: str | None = None
 
 
 class AgentDetailResponse(AgentResponse):
@@ -61,3 +71,5 @@ class AgentDetailResponse(AgentResponse):
     fallback_models: list[str]
     temperature: float
     max_tokens: int
+    prompt_guard_custom_patterns: list[dict] = []
+    prompt_guard_allow_llm_classification: bool = False

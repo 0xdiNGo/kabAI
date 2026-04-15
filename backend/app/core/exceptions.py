@@ -25,3 +25,8 @@ class AuthenticationError(KabAIError):
 class AuthorizationError(KabAIError):
     def __init__(self, detail: str = "Insufficient permissions"):
         super().__init__(detail, status_code=403)
+
+
+class PromptGuardBlockError(KabAIError):
+    def __init__(self, detail: str = "Message blocked by prompt injection guard"):
+        super().__init__(detail, status_code=422)

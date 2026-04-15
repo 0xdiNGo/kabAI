@@ -19,4 +19,11 @@ class SystemSettings(BaseModel):
     auto_routing_enabled: bool = True  # enable model router auto-assignment
     model_recommendations: dict | None = None  # task_type -> model_id mapping from router
     model_scores: list | None = None  # scored model data from last evaluation
+    # Prompt injection guard
+    prompt_guard_enabled: bool = False
+    prompt_guard_default_sensitivity: str = "medium"  # "low" | "medium" | "high"
+    prompt_guard_default_action: str = "log"  # "log" | "warn" | "sanitize" | "block"
+    prompt_guard_max_message_length: int = 10000
+    prompt_guard_custom_patterns: list[dict] = Field(default_factory=list)
+    prompt_guard_log_flagged: bool = True
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -9,6 +9,11 @@ class ConversationCreate(BaseModel):
     collaboration_mode: str | None = None  # "kabainet"
     model: str | None = None  # required if agent_id is None and not kabainet
     title: str | None = None
+    source: str = "web"
+    connector_id: str | None = None
+    external_id: str | None = None
+    channel: str | None = None
+    participants: list[str] | None = None
 
 
 class MessageSend(BaseModel):
@@ -22,6 +27,7 @@ class MessageResponse(BaseModel):
     content: str
     agent_id: str | None
     agent_name: str | None = None
+    sender_name: str | None = None
     model_used: str | None
     created_at: datetime
 
@@ -37,6 +43,10 @@ class ConversationResponse(BaseModel):
     message_count: int
     summary: str | None = None
     last_agent_name: str | None = None
+    source: str = "web"
+    connector_id: str | None = None
+    channel: str | None = None
+    is_taken_over: bool = False
     created_at: datetime
     updated_at: datetime
 

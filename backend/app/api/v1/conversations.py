@@ -27,10 +27,11 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 async def list_conversations(
     limit: int = 50,
     offset: int = 0,
+    source: str | None = None,
     user=Depends(get_current_user),
     svc: ConversationService = Depends(get_conversation_service),
 ):
-    convos = await svc.list_conversations(user.id, limit, offset)
+    convos = await svc.list_conversations(user.id, limit, offset, source=source)
 
     # Batch-load agent names for conversations missing last_agent_name
     agent_ids_needed = {c.agent_id for c in convos if c.agent_id and not c.last_agent_name}
@@ -63,6 +64,10 @@ async def list_conversations(
             message_count=len(c.messages),
             summary=summary,
             last_agent_name=agent_name,
+            source=c.source,
+            connector_id=c.connector_id,
+            channel=c.channel,
+            is_taken_over=c.is_taken_over,
             created_at=c.created_at,
             updated_at=c.updated_at,
         ))
@@ -82,6 +87,11 @@ async def create_conversation(
         collaboration_mode=body.collaboration_mode,
         model=body.model,
         title=body.title,
+        source=body.source,
+        connector_id=body.connector_id,
+        external_id=body.external_id,
+        channel=body.channel,
+        participants=body.participants,
     )
     return {"id": conversation_id}
 
@@ -102,6 +112,10 @@ async def get_conversation(
         is_collaboration=convo.is_collaboration,
         collaboration_mode=convo.collaboration_mode,
         message_count=len(convo.messages),
+        source=convo.source,
+        connector_id=convo.connector_id,
+        channel=convo.channel,
+        is_taken_over=convo.is_taken_over,
         created_at=convo.created_at,
         updated_at=convo.updated_at,
         messages=[
@@ -111,6 +125,7 @@ async def get_conversation(
                 content=m.content,
                 agent_id=m.agent_id,
                 agent_name=m.agent_name,
+                sender_name=m.sender_name,
                 model_used=m.model_used,
                 created_at=m.created_at,
             )
@@ -148,6 +163,7 @@ async def send_message(
             content=msg.content,
             agent_id=msg.agent_id,
             agent_name=msg.agent_name,
+            sender_name=msg.sender_name,
             model_used=msg.model_used,
             created_at=msg.created_at,
         ).model_dump(),

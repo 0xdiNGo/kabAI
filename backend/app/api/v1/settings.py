@@ -26,6 +26,11 @@ class SettingsResponse(BaseModel):
     embedding_model: str | None
     kagi_summarizer_enabled: bool
     kagi_summarizer_engine: str
+    prompt_guard_enabled: bool
+    prompt_guard_default_sensitivity: str
+    prompt_guard_default_action: str
+    prompt_guard_max_message_length: int
+    prompt_guard_log_flagged: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -40,6 +45,12 @@ class SettingsUpdate(BaseModel):
     embedding_model: str | None = None
     kagi_summarizer_enabled: bool | None = None
     kagi_summarizer_engine: str | None = None
+    prompt_guard_enabled: bool | None = None
+    prompt_guard_default_sensitivity: str | None = None
+    prompt_guard_default_action: str | None = None
+    prompt_guard_max_message_length: int | None = None
+    prompt_guard_custom_patterns: list[dict] | None = None
+    prompt_guard_log_flagged: bool | None = None
 
 
 @router.get("", response_model=SettingsResponse)
@@ -60,6 +71,11 @@ async def get_settings(
         embedding_model=settings.embedding_model,
         kagi_summarizer_enabled=settings.kagi_summarizer_enabled,
         kagi_summarizer_engine=settings.kagi_summarizer_engine,
+        prompt_guard_enabled=settings.prompt_guard_enabled,
+        prompt_guard_default_sensitivity=settings.prompt_guard_default_sensitivity,
+        prompt_guard_default_action=settings.prompt_guard_default_action,
+        prompt_guard_max_message_length=settings.prompt_guard_max_message_length,
+        prompt_guard_log_flagged=settings.prompt_guard_log_flagged,
     )
 
 

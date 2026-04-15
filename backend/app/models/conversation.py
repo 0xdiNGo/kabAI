@@ -10,6 +10,7 @@ class Message(BaseModel):
     content: str
     agent_id: str | None = None
     agent_name: str | None = None
+    sender_name: str | None = None  # External sender (IRC nick, Discord user, etc.)
     model_used: str | None = None
     token_count: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -27,5 +28,14 @@ class Conversation(BaseModel):
     collaboration_mode: str | None = None  # "kabainet" | "orchestrator"
     summary: str | None = None  # AI-generated one-line summary
     last_agent_name: str | None = None  # Name of the last agent to respond
+    # Connector source tracking
+    source: str = "web"  # "web" | "irc" | "discord" | "telegram"
+    connector_id: str | None = None  # Ref to connector config that owns this
+    external_id: str | None = None  # e.g. "nick@irc.libera.chat" or "#channel@server"
+    channel: str | None = None  # Channel/room name (e.g. "#kabai")
+    participants: list[str] = Field(default_factory=list)  # External nicks/usernames
+    # Takeover state
+    is_taken_over: bool = False  # True = human operator has taken control
+    takeover_user_id: str | None = None  # User who took over
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -8,6 +8,8 @@ import KnowledgeBasePage from "@/pages/KnowledgeBasePage";
 import ExemplarSetPage from "@/pages/ExemplarSetPage";
 import SearchProvidersPage from "@/pages/SearchProvidersPage";
 import ChatsPage from "@/pages/ChatsPage";
+import ConnectorsPage from "@/pages/ConnectorsPage";
+import ConnectorDetailPage from "@/pages/ConnectorDetailPage";
 import UsagePage from "@/pages/UsagePage";
 import AppLayout from "@/components/layout/AppLayout";
 import CommandPalette from "@/components/CommandPalette";
@@ -26,6 +28,8 @@ export default function AppRoutes() {
           <Route path="/search-providers" element={<SearchProvidersPage />} />
           <Route path="/chats" element={<ChatsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/connectors" element={<ConnectorsPage />} />
+          <Route path="/connectors/:connectorId" element={<ConnectorDetailPage />} />
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/chat/:conversationId" element={<ChatPage />} />
         </Route>

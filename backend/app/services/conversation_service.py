@@ -1,13 +1,14 @@
 import asyncio
 import json
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, PromptGuardBlockError
 from app.models.conversation import Conversation, Message
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
 from app.services.exemplar_service import ExemplarService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
+from app.services.prompt_guard_service import PromptGuardService
 from app.services.search_service import SearchService
 
 
@@ -20,6 +21,7 @@ class ConversationService:
         knowledge_service: KnowledgeService,
         exemplar_service: ExemplarService,
         search_service: SearchService,
+        prompt_guard: PromptGuardService | None = None,
     ):
         self.conversation_repo = conversation_repo
         self.agent_repo = agent_repo
@@ -27,12 +29,18 @@ class ConversationService:
         self.knowledge_service = knowledge_service
         self.exemplar_service = exemplar_service
         self.search_service = search_service
+        self.prompt_guard = prompt_guard
 
     async def create_conversation(
         self, user_id: str, agent_id: str | None = None,
         agent_ids: list[str] | None = None,
         collaboration_mode: str | None = None,
         model: str | None = None, title: str | None = None,
+        source: str = "web",
+        connector_id: str | None = None,
+        external_id: str | None = None,
+        channel: str | None = None,
+        participants: list[str] | None = None,
     ) -> str:
         conversation = Conversation(
             user_id=user_id,
@@ -42,6 +50,11 @@ class ConversationService:
             title=title,
             is_collaboration=collaboration_mode is not None,
             collaboration_mode=collaboration_mode,
+            source=source,
+            connector_id=connector_id,
+            external_id=external_id,
+            channel=channel,
+            participants=participants or [],
         )
         return await self.conversation_repo.create(conversation)
 
@@ -52,9 +65,10 @@ class ConversationService:
         return convo
 
     async def list_conversations(
-        self, user_id: str, limit: int = 50, offset: int = 0
+        self, user_id: str, limit: int = 50, offset: int = 0,
+        source: str | None = None,
     ) -> list[Conversation]:
-        return await self.conversation_repo.find_by_user(user_id, limit, offset)
+        return await self.conversation_repo.find_by_user(user_id, limit, offset, source=source)
 
     async def _retrieve_exemplars(self, agent, query: str):
         """Retrieve few-shot exemplar pairs for an agent."""
@@ -115,15 +129,94 @@ class ConversationService:
 
         return f"{current_message} {context_summary}"
 
+    async def set_takeover(
+        self, conversation_id: str, user_id: str, take_over: bool,
+    ) -> bool:
+        convo = await self.get_conversation(conversation_id, user_id)
+        return await self.conversation_repo.set_takeover(
+            conversation_id, take_over, user_id if take_over else None,
+        )
+
+    async def send_connector_message(
+        self, connector_id: str, external_id: str, content: str,
+        sender_name: str, agent_id: str, user_id: str,
+        channel: str | None = None, source: str = "irc",
+    ) -> dict:
+        """Called by connectors. Finds or creates a conversation, sends the message, gets LLM reply."""
+        convo = await self.conversation_repo.find_by_external_id(connector_id, external_id)
+
+        if not convo:
+            convo_id = await self.create_conversation(
+                user_id=user_id,
+                agent_id=agent_id,
+                source=source,
+                connector_id=connector_id,
+                external_id=external_id,
+                channel=channel,
+                title=f"{channel or sender_name} ({source})",
+                participants=[sender_name],
+            )
+        else:
+            convo_id = convo.id
+            # Add new participant if not already tracked
+            if sender_name not in convo.participants:
+                await self.conversation_repo.update_participants(
+                    convo_id, convo.participants + [sender_name],
+                )
+
+        return await self.send_message(
+            convo_id, user_id, content, sender_name=sender_name,
+        )
+
+    async def _run_prompt_guard(
+        self, content: str, convo: Conversation, sender_name: str | None = None,
+    ) -> str:
+        """Run prompt guard evaluation. Returns (possibly sanitized) content.
+
+        Raises PromptGuardBlockError if the message is blocked.
+        """
+        if not self.prompt_guard:
+            return content
+
+        agent = None
+        if convo.agent_id:
+            agent = await self.agent_repo.find_by_id(convo.agent_id)
+
+        result = await self.prompt_guard.evaluate(
+            content,
+            agent=agent,
+            source=convo.source,
+            conversation_id=convo.id,
+            sender_name=sender_name,
+        )
+
+        if result.action == "block":
+            raise PromptGuardBlockError(
+                result.details or "Message blocked by prompt injection guard"
+            )
+
+        if result.action == "sanitize" and result.sanitized_content:
+            return result.sanitized_content
+
+        return content
+
     async def send_message(
-        self, conversation_id: str, user_id: str, content: str
+        self, conversation_id: str, user_id: str, content: str,
+        sender_name: str | None = None, skip_llm: bool = False,
     ) -> dict:
         """Send a message and get a non-streaming response."""
         convo = await self.get_conversation(conversation_id, user_id)
 
+        # Prompt injection guard — runs before saving to keep blocked content out of history
+        content = await self._run_prompt_guard(content, convo, sender_name)
+
         # Save user message
-        user_msg = Message(role="user", content=content)
+        user_msg = Message(role="user", content=content, sender_name=sender_name)
         await self.conversation_repo.add_message(conversation_id, user_msg)
+
+        # Skip LLM if conversation is taken over or explicitly requested
+        if convo.is_taken_over or skip_llm:
+            return {"message": user_msg, "model_used": None}
 
         # Determine model and agent
         agent = None
@@ -183,6 +276,14 @@ class ConversationService:
     ) -> None:
         """Run streaming message and push events to queue. Saves message to DB on completion."""
         convo = await self.get_conversation(conversation_id, user_id)
+
+        # Prompt injection guard — block pushes error event to queue
+        try:
+            content = await self._run_prompt_guard(content, convo)
+        except PromptGuardBlockError as exc:
+            await queue.put(json.dumps({"type": "error", "content": exc.detail}))
+            await queue.put(None)
+            return
 
         # Save user message
         user_msg = Message(role="user", content=content)

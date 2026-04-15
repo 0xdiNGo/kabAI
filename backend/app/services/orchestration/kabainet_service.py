@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, PromptGuardBlockError
 from app.models.conversation import Message
 from app.repositories.agent_repo import AgentRepository
 from app.repositories.conversation_repo import ConversationRepository
@@ -9,6 +9,7 @@ from app.repositories.settings_repo import SettingsRepository
 from app.services.exemplar_service import ExemplarService
 from app.services.knowledge_service import KnowledgeService
 from app.services.llm_service import LLMService
+from app.services.prompt_guard_service import PromptGuardService
 
 
 class KabAInetService:
@@ -20,6 +21,7 @@ class KabAInetService:
         settings_repo: SettingsRepository,
         knowledge_service: KnowledgeService,
         exemplar_service: ExemplarService,
+        prompt_guard: PromptGuardService | None = None,
     ):
         self.conversation_repo = conversation_repo
         self.agent_repo = agent_repo
@@ -27,6 +29,7 @@ class KabAInetService:
         self.settings_repo = settings_repo
         self.knowledge_service = knowledge_service
         self.exemplar_service = exemplar_service
+        self.prompt_guard = prompt_guard
 
     async def run_message_stream(
         self,
@@ -42,6 +45,24 @@ class KabAInetService:
 
         settings = await self.settings_repo.get()
         max_rounds = settings.kabainet_max_rounds
+
+        # Prompt injection guard on the initial user message
+        if self.prompt_guard:
+            try:
+                guard_result = await self.prompt_guard.evaluate(
+                    content, source=convo.source, conversation_id=conversation_id,
+                )
+                if guard_result.action == "block":
+                    await queue.put(json.dumps({
+                        "type": "error",
+                        "content": guard_result.details or "Message blocked by prompt injection guard",
+                    }))
+                    await queue.put(None)
+                    return
+                if guard_result.action == "sanitize" and guard_result.sanitized_content:
+                    content = guard_result.sanitized_content
+            except Exception:
+                pass  # Guard failure should not block kabAInet
 
         # Save user message
         user_msg = Message(role="user", content=content)
